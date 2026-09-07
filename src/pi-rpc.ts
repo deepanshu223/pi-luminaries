@@ -1,0 +1,725 @@
+import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { basename, extname, isAbsolute, relative, resolve } from 'node:path';
+import { EventEmitter } from 'node:events';
+import { isPiSessionId } from './identifiers.ts';
+import { attachJsonlLineReader, serializeJsonLine, type JsonlLimits, type JsonlReader } from './jsonl.ts';
+import { LUMINARIES_IDENTITY } from './product-identity.ts';
+
+export interface PiInvocation {
+  command: string;
+  args?: readonly string[];
+}
+
+export interface PrivateLaunchOptions {
+  privateSessionDir: string;
+  sessionId: string;
+  cwd: string;
+  agentId?: string;
+  model?: string;
+  thinking?: string;
+  provider?: string;
+  extension?: string;
+  noExtensions?: boolean;
+  tools?: readonly string[];
+  extensions?: readonly string[];
+  skills?: readonly string[];
+  promptTemplates?: readonly string[];
+  themes?: readonly string[];
+  noContextFiles?: boolean;
+  systemPrompt?: string;
+  sessionFile?: string;
+}
+
+export interface PrivateLaunch {
+  invocation: PiInvocation;
+  sessionId: string;
+  privateSessionDir: string;
+  sessionFile?: string;
+  cwd: string;
+}
+export interface PiState {
+  sessionId?: string;
+  sessionFile?: string;
+  [key: string]: unknown;
+}
+export interface PiRpcLimits extends JsonlLimits {
+  maxPendingRequests?: number;
+  maxQueuedCommands?: number;
+  maxStderrBytes?: number;
+  maxDiagnostics?: number;
+}
+export interface PiRpcOptions {
+  invocation: PiInvocation;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  unsetEnv?: readonly string[];
+  limits?: PiRpcLimits;
+  requestTimeoutMs?: number;
+}
+export interface RpcResponse {
+  id?: string | number;
+  [key: string]: unknown;
+}
+export interface CancelledExtensionUiRequest {
+  id: string;
+  method: 'select' | 'confirm' | 'input' | 'editor';
+  title: string;
+}
+
+export class PiRpcCommandError extends Error {
+  readonly command: string;
+  constructor(command: string, message: string) {
+    super(message);
+    this.name = 'PiRpcCommandError';
+    this.command = command;
+  }
+}
+
+const UNSAFE_DIRECT_INVOCATION_EXTENSIONS = new Set(['.cmd', '.bat', '.js', '.mjs', '.cjs']);
+const GENERIC_RUNTIME_EXECUTABLES: Record<string, true> = {
+  bun: true,
+  'bun.exe': true,
+  deno: true,
+  'deno.exe': true,
+  electron: true,
+  'electron.exe': true,
+  node: true,
+  'node.exe': true,
+};
+const INHERITED_PARENT_SESSION_ENV = [
+  'PI_SESSION_ID',
+  'PI_SESSION_FILE',
+  'PI_PROVIDER',
+  'PI_MODEL',
+  'PI_REASONING_LEVEL',
+] as const;
+const DEFAULTS = {
+  maxPendingRequests: 128,
+  maxQueuedCommands: 128,
+  maxStderrBytes: 64 * 1024,
+  maxDiagnostics: 32,
+  requestTimeoutMs: 30_000,
+};
+const OVERSIZED_AGENT_END_PREFIX = '{"type":"agent_end","messages":';
+function childError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value))
+    : undefined;
+}
+function isWithin(child: string, parent: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === '' || (rel !== '..' && !rel.startsWith('../') && !rel.startsWith('..\\') && !isAbsolute(rel));
+}
+function validateBaseInvocationArgs(invocation: PiInvocation): void {
+  const option = (invocation.args ?? []).find((arg) => arg.startsWith('-'));
+  if (option) throw new Error(`Pi base invocation arguments cannot contain CLI options: ${option}`);
+}
+
+/** Build a private, fresh or exact-resume Pi RPC invocation. */
+export function buildPrivateSessionLaunch(options: PrivateLaunchOptions, invocation: PiInvocation): PrivateLaunch {
+  validateBaseInvocationArgs(invocation);
+  if (!isAbsolute(options.privateSessionDir) || !isAbsolute(options.cwd))
+    throw new TypeError('privateSessionDir and cwd must be absolute');
+  if (!isPiSessionId(options.sessionId))
+    throw new TypeError(
+      'sessionId must start and end with an alphanumeric character and contain only alphanumerics, ., _ or -',
+    );
+  const privateSessionDir = resolve(options.privateSessionDir);
+  const cwd = resolve(options.cwd);
+  const args = ['--mode', 'rpc', '--session-dir', privateSessionDir];
+  let sessionFile: string | undefined;
+  if (options.sessionFile !== undefined) {
+    if (!isAbsolute(options.sessionFile)) throw new TypeError('sessionFile must be absolute');
+    sessionFile = resolve(options.sessionFile);
+    if (!isWithin(sessionFile, privateSessionDir)) throw new Error('sessionFile must be inside privateSessionDir');
+    args.push('--session', sessionFile);
+  } else args.push('--session-id', options.sessionId);
+  if (options.agentId) args.push('--name', options.agentId);
+  if (options.provider) args.push('--provider', options.provider);
+  if (options.model) args.push('--model', options.model);
+  if (options.thinking) args.push('--thinking', options.thinking);
+  if (options.tools !== undefined) {
+    if (
+      options.tools.some(
+        (tool) =>
+          !tool ||
+          tool.includes(',') ||
+          [...tool].some((character) => {
+            const code = character.codePointAt(0) ?? 0;
+            return code < 32 || code === 127;
+          }),
+      )
+    )
+      throw new TypeError('tools contains a value that cannot be represented by Pi --tools');
+    args.push(options.tools.length ? '--tools' : '--no-tools');
+    if (options.tools.length) args.push(options.tools.join(','));
+  }
+  if (options.noExtensions !== false) args.push('--no-extensions');
+  if (options.extension) {
+    if (!isAbsolute(options.extension)) throw new TypeError('extension must be absolute');
+    args.push('--extension', resolve(options.extension));
+  }
+  for (const extension of options.extensions ?? []) {
+    if (!isAbsolute(extension)) throw new TypeError('extensions must contain only absolute paths');
+    args.push('--extension', resolve(extension));
+  }
+  if (options.noContextFiles)
+    args.push(
+      '--no-context-files',
+      '--no-skills',
+      '--no-prompt-templates',
+      '--no-themes',
+      '--append-system-prompt',
+      '',
+    );
+  else if (options.skills !== undefined) args.push('--no-skills');
+  for (const skill of options.skills ?? []) {
+    if (!isAbsolute(skill)) throw new TypeError('skills must contain only absolute paths');
+    args.push('--skill', resolve(skill));
+  }
+  if (!options.noContextFiles && options.promptTemplates !== undefined) args.push('--no-prompt-templates');
+  for (const promptTemplate of options.promptTemplates ?? []) {
+    if (!isAbsolute(promptTemplate)) throw new TypeError('promptTemplates must contain only absolute paths');
+    args.push('--prompt-template', resolve(promptTemplate));
+  }
+  if (!options.noContextFiles && options.themes !== undefined) args.push('--no-themes');
+  for (const theme of options.themes ?? []) {
+    if (!isAbsolute(theme)) throw new TypeError('themes must contain only absolute paths');
+    args.push('--theme', resolve(theme));
+  }
+  if (options.systemPrompt) args.push('--system-prompt', options.systemPrompt);
+  return {
+    invocation: { command: invocation.command, args: [...(invocation.args ?? []), ...args] },
+    sessionId: options.sessionId,
+    privateSessionDir,
+    sessionFile,
+    cwd,
+  };
+}
+
+function validateInvocation(invocation: PiInvocation): PiInvocation {
+  if (!invocation.command || !isAbsolute(invocation.command))
+    throw new Error('Pi invocation command must be an absolute executable path');
+  if (UNSAFE_DIRECT_INVOCATION_EXTENSIONS.has(extname(invocation.command).toLowerCase()))
+    throw new Error(
+      'Pi invocation must be an executable or Node CLI path, not a shell wrapper or direct JavaScript file',
+    );
+  return { command: resolve(invocation.command), args: [...(invocation.args ?? [])] };
+}
+
+/** Resolve an explicit invocation, or the exact executable/script running this Pi owner. */
+export function resolvePiInvocation(explicit?: PiInvocation): PiInvocation {
+  if (explicit) return validateInvocation(explicit);
+  if (
+    isAbsolute(process.execPath) &&
+    existsSync(process.execPath) &&
+    !Object.hasOwn(GENERIC_RUNTIME_EXECUTABLES, basename(process.execPath).toLowerCase())
+  )
+    return validateInvocation({ command: process.execPath });
+  const script = process.argv[1];
+  if (script && isAbsolute(script) && existsSync(script))
+    return validateInvocation({ command: process.execPath, args: [script] });
+  throw new Error(
+    'Pi invocation is required; pass the absolute Pi executable or runtime plus its absolute current script',
+  );
+}
+
+export function verifyPrivateSessionState(
+  value: unknown,
+  expected: { sessionId: string; privateSessionDir: string; sessionFile?: string },
+): PiState {
+  const state = recordOf(value);
+  if (!state) throw new Error('Pi session state is not an object');
+  if (state.sessionId !== expected.sessionId)
+    throw new Error(`Pi session ID mismatch: expected ${expected.sessionId}, got ${String(state.sessionId)}`);
+  if (
+    typeof state.sessionFile !== 'string' ||
+    !isAbsolute(state.sessionFile) ||
+    !isWithin(state.sessionFile, expected.privateSessionDir)
+  )
+    throw new Error(
+      `Pi session file is not an absolute path inside the private session directory: ${String(state.sessionFile)}`,
+    );
+  if (expected.sessionFile !== undefined && resolve(state.sessionFile) !== resolve(expected.sessionFile))
+    throw new Error(`Pi session file mismatch: expected ${expected.sessionFile}, got ${state.sessionFile}`);
+  return state;
+}
+
+interface Pending {
+  resolve: (value: RpcResponse) => void;
+  reject: (error: Error) => void;
+  timer?: NodeJS.Timeout;
+  command: string;
+}
+interface SettlementWait {
+  promise: Promise<Record<string, unknown>>;
+  cancel: (error: Error) => void;
+}
+
+/** One Pi RPC process. Command writes are serialized; responses/events are independent. */
+export class PiRpcProcess extends EventEmitter {
+  private child?: ChildProcess;
+  private reader?: JsonlReader;
+  private readonly pending = new Map<string | number, Pending>();
+  private writeChain: Promise<void> = Promise.resolve();
+  private queuedCommands = 0;
+  private sequence = 0;
+  private closed = false;
+  private intentionalClose = false;
+  private exited = false;
+  private exitError?: Error;
+  private failureEmitted = false;
+  private closePromise?: Promise<void>;
+  private terminationPromise?: Promise<void>;
+  private settlementActive = false;
+  private cancelSettlement?: (error: Error) => void;
+  private readonly stderrRing: string[] = [];
+  private readonly diagnosticsRing: string[] = [];
+  private readonly limits: Required<Omit<PiRpcLimits, 'skipOversizedRecordPrefix'>>;
+  private readonly options: PiRpcOptions;
+
+  constructor(options: PiRpcOptions) {
+    super();
+    this.options = options;
+    this.limits = {
+      maxRecordBytes: options.limits?.maxRecordBytes ?? 1024 * 1024,
+      maxBufferBytes: options.limits?.maxBufferBytes ?? 2 * 1024 * 1024,
+      maxPendingRequests: options.limits?.maxPendingRequests ?? DEFAULTS.maxPendingRequests,
+      maxQueuedCommands: options.limits?.maxQueuedCommands ?? DEFAULTS.maxQueuedCommands,
+      maxStderrBytes: options.limits?.maxStderrBytes ?? DEFAULTS.maxStderrBytes,
+      maxDiagnostics: options.limits?.maxDiagnostics ?? DEFAULTS.maxDiagnostics,
+    };
+    for (const [name, value] of Object.entries(this.limits)) {
+      if (!Number.isSafeInteger(value) || value < 1)
+        throw new RangeError(`Pi RPC ${name} must be a positive safe integer`);
+    }
+    if (this.limits.maxBufferBytes < this.limits.maxRecordBytes)
+      throw new RangeError('Pi RPC maxBufferBytes must hold one record');
+  }
+
+  start(): void {
+    if (this.child) throw new Error('Pi RPC process already started');
+    if (this.closed) throw new Error('Pi RPC process is closed');
+    const invocation = validateInvocation(this.options.invocation);
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of INHERITED_PARENT_SESSION_ENV) delete env[key];
+    for (const [key, value] of Object.entries(this.options.env ?? {})) {
+      if (value === undefined) delete env[key];
+      else env[key] = value;
+    }
+    for (const key of this.options.unsetEnv ?? []) delete env[key];
+    const child = spawn(invocation.command, [...(invocation.args ?? [])], {
+      cwd: this.options.cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    this.child = child;
+    if (!child.stdin || !child.stdout || !child.stderr) {
+      child.kill('SIGKILL');
+      throw new Error('Pi RPC process did not expose all configured stdio pipes');
+    }
+    child.once('error', (error) =>
+      this.intentionalClose ? this.addDiagnostic(childError(error)) : this.recordFailure(childError(error)),
+    );
+    child.once('exit', (code, signal) => {
+      this.exited = true;
+      if (!this.intentionalClose && !this.exitError)
+        this.recordFailure(new Error(`Pi RPC process exited (code=${String(code)}, signal=${String(signal)})`), false);
+      this.safeEmit('exit', { code, signal, error: this.exitError });
+    });
+    this.reader = attachJsonlLineReader(
+      child.stdout,
+      (value) => this.handleRecord(value),
+      { ...this.limits, skipOversizedRecordPrefix: OVERSIZED_AGENT_END_PREFIX },
+      (error) => this.recordFailure(error),
+    );
+    child.stdin?.on('error', (error) =>
+      this.closed || this.intentionalClose
+        ? this.addDiagnostic(childError(error))
+        : this.recordFailure(childError(error)),
+    );
+    child.stdout?.on('error', (error) =>
+      this.closed || this.intentionalClose
+        ? this.addDiagnostic(childError(error))
+        : this.recordFailure(childError(error)),
+    );
+    child.stderr?.on('error', (error) => this.addDiagnostic(childError(error)));
+    child.stderr.on('data', (chunk: Buffer | string) => this.captureStderr(String(chunk)));
+  }
+
+  request(
+    command: Record<string, unknown>,
+    timeoutMs: number | null = this.options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs,
+  ): Promise<RpcResponse> {
+    if (!this.child || this.closed || this.exitError)
+      return Promise.reject(this.exitError ?? new Error('Pi RPC process is not running'));
+    if (this.pending.size >= this.limits.maxPendingRequests)
+      return Promise.reject(new Error('Pi RPC pending-request bound exceeded'));
+    if (this.queuedCommands >= this.limits.maxQueuedCommands)
+      return Promise.reject(new Error('Pi RPC command queue bound exceeded'));
+    if (timeoutMs !== null && (!Number.isFinite(timeoutMs) || timeoutMs <= 0))
+      return Promise.reject(new RangeError('Pi RPC request timeout must be null or positive'));
+    if (command.id !== undefined && typeof command.id !== 'string' && typeof command.id !== 'number')
+      return Promise.reject(new TypeError('Pi RPC request id must be a string or number'));
+    const id =
+      command.id === undefined ? `${LUMINARIES_IDENTITY.namespace.publicIdPrefix}${++this.sequence}` : command.id;
+    if (this.pending.has(id)) return Promise.reject(new Error(`Duplicate Pi RPC request id: ${String(id)}`));
+    const commandName = typeof command.type === 'string' ? command.type : 'unknown';
+    const outbound = { ...command, id };
+    this.queuedCommands++;
+    let rejectRequest: (error: Error) => void = () => undefined;
+    const promise = new Promise<RpcResponse>((resolvePromise, rejectPromise) => {
+      rejectRequest = rejectPromise;
+      const timer =
+        timeoutMs === null
+          ? undefined
+          : setTimeout(() => {
+              const pending = this.pending.get(id);
+              if (!pending) return;
+              const error = new Error(`Pi RPC response timeout for ${String(id)}`);
+              this.pending.delete(id);
+              rejectPromise(error);
+              this.recordFailure(error);
+            }, timeoutMs);
+      this.pending.set(id, { resolve: resolvePromise, reject: rejectPromise, timer, command: commandName });
+    });
+    const dispatch = async () => {
+      try {
+        if (!this.pending.has(id)) return;
+        if (!this.child || this.closed) throw new Error('Pi RPC process closed before command dispatch');
+        await this.write(serializeJsonLine(outbound, this.limits.maxRecordBytes));
+      } catch (error) {
+        const pending = this.pending.get(id);
+        if (pending && this.pending.delete(id)) {
+          if (pending.timer) clearTimeout(pending.timer);
+          rejectRequest(childError(error));
+          if (!this.intentionalClose) this.recordFailure(childError(error));
+        }
+      } finally {
+        this.queuedCommands--;
+      }
+    };
+    this.writeChain = this.writeChain.then(dispatch, dispatch);
+    return promise;
+  }
+
+  async getState(
+    expected: { sessionId: string; privateSessionDir: string; sessionFile?: string },
+    timeoutMs = this.options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs,
+  ): Promise<PiState> {
+    const response = await this.request({ type: 'get_state' }, timeoutMs);
+    return verifyPrivateSessionState(recordOf(response.data) ?? response, expected);
+  }
+
+  async requestAndWaitForSettled(
+    command: Record<string, unknown>,
+    timeoutMs: number | null = this.options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs,
+    onAdmitted?: (response: RpcResponse) => Promise<void>,
+    settlementTimeoutMs: number | null = timeoutMs,
+  ): Promise<{ response: RpcResponse; settled: Record<string, unknown> }> {
+    const wait = this.createSettlementWait(settlementTimeoutMs);
+    try {
+      const response = this.request(command, timeoutMs).then(async (value) => {
+        await onAdmitted?.(value);
+        return value;
+      });
+      const [accepted, settled] = await Promise.all([response, wait.promise]);
+      return { response: accepted, settled };
+    } catch (error) {
+      const normalized = childError(error);
+      wait.cancel(normalized);
+      if (!this.exitError && normalized.message === 'Pi agent_settled timeout') {
+        const indeterminate = new Error(
+          'Pi RPC command outcome is indeterminate because agent_settled was not observed',
+          { cause: normalized },
+        );
+        this.recordFailure(indeterminate);
+        throw indeterminate;
+      }
+      throw normalized;
+    }
+  }
+
+  waitForAgentSettled(
+    timeoutMs = this.options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs,
+  ): Promise<Record<string, unknown>> {
+    return this.createSettlementWait(timeoutMs).promise;
+  }
+
+  private createSettlementWait(timeoutMs: number | null): SettlementWait {
+    if (timeoutMs !== null && (!Number.isFinite(timeoutMs) || timeoutMs <= 0))
+      throw new RangeError('Pi agent settlement timeout must be null or positive');
+    if (this.exitError) throw this.exitError;
+    if (this.closed) throw new Error('Pi RPC process is closed');
+    if (this.settlementActive)
+      throw new Error('Pi agent settlement wait already active; overlapping activations are refused');
+    this.settlementActive = true;
+    let finish: (error?: Error, event?: Record<string, unknown>) => void = () => undefined;
+    let cancel: (error: Error) => void = () => undefined;
+    const promise = new Promise<Record<string, unknown>>((resolvePromise, rejectPromise) => {
+      let started = false;
+      let finished = false;
+      const timer =
+        timeoutMs === null ? undefined : setTimeout(() => finish(new Error('Pi agent_settled timeout')), timeoutMs);
+      const onEvent = (event: Record<string, unknown>) => {
+        if (event.type === 'agent_start') started = true;
+        else if (event.type === 'agent_settled' && started) finish(undefined, event);
+      };
+      const onFailure = (error: Error) => finish(error);
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        this.off('event', onEvent);
+        this.off('failure', onFailure);
+        this.settlementActive = false;
+        if (this.cancelSettlement === cancel) this.cancelSettlement = undefined;
+      };
+      finish = (error, event) => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        if (error) rejectPromise(error);
+        else if (event) resolvePromise(event);
+        else rejectPromise(new Error('Pi settlement completed without an event'));
+      };
+      cancel = (error) => finish(error);
+      this.cancelSettlement = cancel;
+      this.on('event', onEvent);
+      this.on('failure', onFailure);
+    });
+    return { promise, cancel };
+  }
+
+  get stderr(): readonly string[] {
+    return this.stderrRing;
+  }
+  get diagnostics(): readonly string[] {
+    return this.diagnosticsRing;
+  }
+  get process(): ChildProcess | undefined {
+    return this.child;
+  }
+
+  async close(timeoutMs = 2_000): Promise<void> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError('Pi RPC close timeout must be positive');
+    if (this.closePromise) return this.closePromise;
+    this.closePromise = this.closeImpl(timeoutMs);
+    return this.closePromise;
+  }
+
+  private async closeImpl(timeoutMs: number): Promise<void> {
+    this.closed = true;
+    this.intentionalClose = true;
+    const closeError = new Error('Pi RPC process closed');
+    this.reader?.stop();
+    this.cancelSettlement?.(closeError);
+    this.rejectPending(closeError);
+    const child = this.child;
+    if (!child || this.exited || child.exitCode !== null || child.signalCode !== null) {
+      this.removeChildListeners();
+      return;
+    }
+    if (child.stdin && !child.stdin.destroyed) child.stdin.end();
+    try {
+      await (this.terminationPromise ??= this.terminateChild(child, timeoutMs));
+    } catch (error) {
+      this.intentionalClose = false;
+      this.recordFailure(childError(error), false);
+      throw error;
+    } finally {
+      this.removeChildListeners();
+    }
+  }
+
+  private write(line: string): Promise<void> {
+    return new Promise((resolvePromise, rejectPromise) => {
+      if (!this.child?.stdin || this.child.stdin.destroyed)
+        return rejectPromise(new Error('Pi RPC stdin is unavailable'));
+      this.child.stdin.write(line, 'utf8', (error?: Error | null) => (error ? rejectPromise(error) : resolvePromise()));
+    });
+  }
+
+  private handleRecord(value: unknown): void {
+    if (this.closed || this.exitError) return;
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      return this.recordFailure(new Error('Pi RPC record is not an object'));
+    const record = recordOf(value);
+    if (!record) return this.recordFailure(new Error('Pi RPC record is not an object'));
+    if (record.type === 'extension_ui_request' && isBlockingExtensionUiMethod(record.method)) {
+      if (typeof record.id !== 'string')
+        return this.recordFailure(new Error('Blocking Pi extension UI request has no string id'));
+      const notice: CancelledExtensionUiRequest = {
+        id: record.id,
+        method: record.method,
+        title: boundedUiTitle(record.title),
+      };
+      const respond = async () => {
+        try {
+          await this.write(
+            serializeJsonLine(
+              { type: 'extension_ui_response', id: notice.id, cancelled: true },
+              this.limits.maxRecordBytes,
+            ),
+          );
+          this.safeEmit('extension_ui_cancelled', notice);
+        } catch (error) {
+          this.recordFailure(childError(error));
+        }
+      };
+      this.writeChain = this.writeChain.then(respond, respond);
+      return;
+    }
+    if (record.type === 'response') {
+      const responseId = record.id;
+      if ((typeof responseId !== 'string' && typeof responseId !== 'number') || !this.pending.has(responseId))
+        return this.recordFailure(new Error(`Pi RPC response has unknown request id ${String(responseId)}`));
+      if (typeof record.success !== 'boolean')
+        return this.recordFailure(new Error(`Pi RPC response for ${String(responseId)} has no boolean success field`));
+      const pending = this.pending.get(responseId);
+      if (!pending) return this.recordFailure(new Error(`Pi RPC response lost request id ${String(responseId)}`));
+      this.pending.delete(responseId);
+      if (pending.timer) clearTimeout(pending.timer);
+      if (!record.success) {
+        const detail =
+          typeof record.error === 'string'
+            ? record.error
+            : record.error && typeof record.error === 'object'
+              ? JSON.stringify(record.error)
+              : 'Pi RPC command failed';
+        pending.reject(new PiRpcCommandError(pending.command, detail));
+      } else pending.resolve({ ...record, id: responseId });
+      return;
+    }
+    this.safeEmit('event', record);
+  }
+
+  private captureStderr(text: string): void {
+    const bytes = Buffer.from((this.stderrRing[0] ?? '') + text, 'utf8');
+    const tail = bytes.subarray(Math.max(0, bytes.length - this.limits.maxStderrBytes));
+    this.stderrRing.splice(0, this.stderrRing.length, tail.toString('utf8'));
+    this.safeEmit('stderr', this.stderrRing[0]);
+  }
+
+  private rejectPending(error: Error): void {
+    for (const pending of this.pending.values()) {
+      if (pending.timer) clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+  }
+
+  private recordFailure(error: Error, terminate = true): void {
+    if (!this.exitError) this.exitError = error;
+    this.closed = true;
+    this.reader?.stop();
+    if (this.child?.stdin && !this.child.stdin.destroyed) this.child.stdin.destroy();
+    this.cancelSettlement?.(this.exitError);
+    this.rejectPending(this.exitError);
+    if (!this.failureEmitted) {
+      this.failureEmitted = true;
+      this.safeEmit('failure', this.exitError);
+    }
+    if (terminate && this.child && !this.exited && !this.intentionalClose)
+      void (this.terminationPromise ??= this.terminateChild(this.child, 2_000)).catch((terminationError) =>
+        this.addDiagnostic(childError(terminationError)),
+      );
+  }
+
+  private safeEmit(event: string, ...args: unknown[]): void {
+    for (const listener of this.rawListeners(event)) {
+      try {
+        Reflect.apply(listener, this, args);
+      } catch (error) {
+        this.addDiagnostic(new Error(`Pi RPC ${event} listener failed: ${childError(error).message}`));
+      }
+    }
+  }
+
+  private addDiagnostic(error: Error): void {
+    this.diagnosticsRing.push(error.message);
+    while (this.diagnosticsRing.length > this.limits.maxDiagnostics) this.diagnosticsRing.shift();
+  }
+
+  private async terminateChild(child: ChildProcess, timeoutMs: number): Promise<void> {
+    if (this.exited || child.exitCode !== null || child.signalCode !== null) return;
+    const deadline = Date.now() + timeoutMs;
+    const graceful = Math.max(1, Math.floor(timeoutMs / 3));
+    try {
+      await this.waitForExit(child, graceful);
+      return;
+    } catch {
+      /* escalate */
+    }
+    try {
+      child.kill('SIGTERM');
+    } catch (error) {
+      this.addDiagnostic(childError(error));
+    }
+    const afterTerm = deadline - Date.now();
+    if (afterTerm > 1) {
+      try {
+        await this.waitForExit(child, Math.max(1, Math.floor(afterTerm / 2)));
+        return;
+      } catch {
+        /* escalate */
+      }
+    }
+    try {
+      child.kill('SIGKILL');
+    } catch (error) {
+      this.addDiagnostic(childError(error));
+    }
+    const finalBudget = deadline - Date.now();
+    if (finalBudget < 1) throw new Error('Pi RPC child exit was not confirmed before timeout');
+    await this.waitForExit(child, finalBudget);
+  }
+
+  private waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
+    if (this.exited || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    return new Promise((resolvePromise, rejectPromise) => {
+      let timer: NodeJS.Timeout;
+      const done = () => {
+        clearTimeout(timer);
+        child.off('exit', done);
+        resolvePromise();
+      };
+      timer = setTimeout(() => {
+        child.off('exit', done);
+        rejectPromise(new Error('Pi RPC child exit was not confirmed before timeout'));
+      }, timeoutMs);
+      child.once('exit', done);
+      if (this.exited || child.exitCode !== null || child.signalCode !== null) done();
+    });
+  }
+
+  private removeChildListeners(): void {
+    const child = this.child;
+    if (!child) return;
+    child.removeAllListeners('error');
+    child.removeAllListeners('exit');
+    child.stdin?.removeAllListeners();
+    child.stdout?.removeAllListeners();
+    child.stderr?.removeAllListeners();
+  }
+}
+
+function isBlockingExtensionUiMethod(value: unknown): value is CancelledExtensionUiRequest['method'] {
+  return value === 'select' || value === 'confirm' || value === 'input' || value === 'editor';
+}
+
+function boundedUiTitle(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return 'untitled request';
+  const clean = [...value]
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code >= 32 && code !== 127;
+    })
+    .join('');
+  let result = clean.slice(0, 256);
+  while (Buffer.byteLength(result) > 512) result = result.slice(0, -1);
+  return result || 'untitled request';
+}

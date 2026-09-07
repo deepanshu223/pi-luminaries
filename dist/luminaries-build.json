@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "buildId": "b13aad1d6757a7ab2c2e43d281855734e40412f2876decf3a208ab86bc16a60f",
+  "files": [
+    {
+      "path": "dist/accepted-build.js",
+      "sha256": "2902c7bb841698b3ba9622bfbcde257b2e0454ad91e637ea241f0d2a7701227e"
+    },
+    {
+      "path": "dist/actor-pool.js",
+      "sha256": "7c278f804a215a54aaa9e2510099833707205b4bb5297361347f9d1aca1a58bd"
+    },
+    {
+      "path": "dist/actor-runtime.js",
+      "sha256": "0aae01548d669ae0029b0f56db7a7da54c129c7bdb76a004d6bae6fe33d0835c"
+    },
+    {
+      "path": "dist/agent-conversations.js",
+      "sha256": "cdf4b7b1e868b05eb8537f470250cf144fb268e2e4f5a62281e89b32731b43ee"
+    },
+    {
+      "path": "dist/agent-directory.js",
+      "sha256": "8f1731c2846afb628f2fb3fdc81be33a0842dd441017a6287c560815a3b7fac6"
+    },
+    {
+      "path": "dist/agent-identity.js",
+      "sha256": "30812982dbda6f0bb9fde8336cae64f7395a68c71dd51462e4f1848de65baa27"
+    },
+    {
+      "path": "dist/assistant-stream.js",
+      "sha256": "787bc515feec4252675d2b5d038e06f76f41c38c66fdbf8df9dc656110b111f0"
+    },
+    {
+      "path": "dist/atomic-file.js",
+      "sha256": "093dc8b1b8ac836e39fc7ad07a00d6832c23915a78c78d3c3634ec10812a9a86"
+    },
+    {
+      "path": "dist/attachment.js",
+      "sha256": "d85819b0b5d75a4ff72d6c2d7c1e97cbd8f0da736fdc79ab835635bc84359823"
+    },
+    {
+      "path": "dist/bounded-response.js",
+      "sha256": "e1f8adddfa49ab2332ea913550e17c2eddf4ac40b0a14835cb34026a0c220ded"
+    },
+    {
+      "path": "dist/capability-policy.js",
+      "sha256": "72f87c5f28c1d3f4f8887666910e0db7bdedb4be0927d5ca34f3c8d154fd0418"
+    },
+    {
+      "path": "dist/causal-policy.js",
+      "sha256": "2abb93aebb84aaf3e4e93cdfaa07ed9476d9e8dc8a11e7a207fd771552c3bacd"
+    },
+    {
+      "path": "dist/child-input.js",
+      "sha256": "ececbc925c6f82a6d43ffe0813a73e88782bd6804bf4fd93cc457cd9cf5815c7"
+    },
+    {
+      "path": "dist/command-center-card.js",
+      "sha256": "c5650841a26e1fedc69f9a513308a755313d041d42dfbb745d5d7451e57d9de5"
+    },
+    {
+      "path": "dist/command-center-projection.js",
+      "sha256": "4475a9f0f794ca976d2b8099334ea7a067511dd07277edd2f85784e35556c1a4"
+    },
+    {
+      "path": "dist/command-center-view.js",
+      "sha256": "5c940cca1cd08518270ddfba303ad61fd1aaac019b4d505cc7e1a91f6c50fba6"
+    },
+    {
+      "path": "dist/command-center.js",
+      "sha256": "e1e62be8eac006b6f487417cf660382d9c4ae79a65b37c1379ab2e7dc9ad0337"
+    },
+    {
+      "path": "dist/completion-policy.js",
+      "sha256": "459ba3d2c546f1ea345bff1d37ce16e0e36e99d98e07a62d0b890a1a6e649257"
+    },
+    {
+      "path": "dist/configuration-policy.js",
+      "sha256": "00bea8eaf5958972945ad9ae26ed99dfa9590e670abd0ec2af77e05cf779e4fa"
+    },
+    {
+      "path": "dist/configuration-runtime.js",
+      "sha256": "597239f5d3d2fc833b23e673fb167b1c369b3ba3ebebfbbdf79f757a1895fea8"
+    },
+    {
+      "path": "dist/context-session.js",
+      "sha256": "09537c7bc203edc392fe476d1df5928b7ca937093db88869434d4992c56dec11"
+    },
+    {
+      "path": "dist/context-transfer.js",
+      "sha256": "b9ddd79d971bd4769808b882d7307718118ace0663b104ecf91ebe976ab67589"
+    },
+    {
+      "path": "dist/control-log.js",
+      "sha256": "683de92f7bc290132067998687d617cb5f78418aa8a1049fc3cff9a0cd2c4549"
+    },
+    {
+      "path": "dist/direct-control-policy.js",
+      "sha256": "e3282c42f0fd5a3437de9cb02af9c4086083dc92fbd8bf9536ea7a985204e16a"
+    },
+    {
+      "path": "dist/display-sanitizer.js",
+      "sha256": "021f600a4fbdacfab4a08aa88f56ced59c3382d4973547ca24ef21787b5e6db1"
+    },
+    {
+      "path": "dist/extension.js",
+      "sha256": "29a047221cd05fc4a9d979b225094193eedf648e08a95d734c8601468f76ec96"
+    },
+    {
+      "path": "dist/health-policy.js",
+      "sha256": "7c307a42e6034b3028d08df90fac6fd76950bfbced452bdabaf31e2b59cd95bf"
+    },
+    {
+      "path": "dist/identifiers.js",
+      "sha256": "c0cefb9a12825711e62a20bd7a7b027c7f4c283912349dbdc91140b1af52e53a"
+    },
+    {
+      "path": "dist/jsonl.js",
+      "sha256": "ee9dee3193aaf407094c22e47ceb105d7012655505101ab43ac124404923e36e"
+    },
+    {
+      "path": "dist/luminaries-child-client.js",
+      "sha256": "eaceaab0c2223f4872d6404bddb4a6df31d8f5a8d1112feb310ddf6e1f7a2086"
+    },
+    {
+      "path": "dist/luminaries-manager.js",
+      "sha256": "c7e616dcf2512e30dbf6b2463f0e7e9b202a2c48fd1480587ee4314fbf21276e"
+    },
+    {
+      "path": "dist/luminaries-tools.js",
+      "sha256": "705585b7534884d68dafffd062acbab2440a6929ed4e2ae78edb4d3e0e3047a9"
+    },
+    {
+      "path": "dist/model-boundary-tracker.js",
+      "sha256": "e47826e5beb770080c37154c8b455e518cf2ac8e158eb46ac947bfd96a80b415"
+    },
+    {
+      "path": "dist/parent-context.js",
+      "sha256": "d41da79dae55d30851006224758ed2a5877065aecf368b3c72c8857d38474641"
+    },
+    {
+      "path": "dist/peer-bridge.js",
+      "sha256": "1790bad105782507d56eb3306938da923bfef49cdcda799a20ac886b20aade5d"
+    },
+    {
+      "path": "dist/peer-delivery.js",
+      "sha256": "2b5cafdff55dbd7baea1d1b2207fb085bd732bc503c5dd5d9efd9f250c28124e"
+    },
+    {
+      "path": "dist/peer-event-policy.js",
+      "sha256": "57f8fdc8bf7ee750bb03142e649b68b14ed2a19189c25189190df6841a634902"
+    },
+    {
+      "path": "dist/peer-prompt.js",
+      "sha256": "d7feec5c585fc8190835e7fcb676c765c82c618c645def74ba7bb5132a8f7322"
+    },
+    {
+      "path": "dist/pi-rpc.js",
+      "sha256": "39417ca0503bfece6d1c2dde2354885f85d597c082e070f4cd21e8586f16d75c"
+    },
+    {
+      "path": "dist/pi-session-host.js",
+      "sha256": "f40db656fcc326e406837e11eb21c21e3d6450f649c0f546d50071c60a3361dc"
+    },
+    {
+      "path": "dist/private-path-policy.js",
+      "sha256": "dc6e22ca4bc368c52738181defde0e55764d6560a859f4f3fbe35a58757c4f8c"
+    },
+    {
+      "path": "dist/process-liveness.js",
+      "sha256": "2c540a84506bf26910a140348988bbcc3175f93c3b600ec39a101ae1d63a35c8"
+    },
+    {
+      "path": "dist/product-identity.js",
+      "sha256": "ae1966b221208f2beafc9cab54aff1dffbde5cb4198bfdcab319bbee1907d1d6"
+    },
+    {
+      "path": "dist/public-pagination.js",
+      "sha256": "7dcb0a8b0ddb2fd8d1f0df4b7a682fd0f5b67a0fcd59326f6592829b5a9d2462"
+    },
+    {
+      "path": "dist/request-deadlines.js",
+      "sha256": "078961e84b18b9bfb1deeacdfaf72f6a4d884b807934e12929d320cf2a0693f2"
+    },
+    {
+      "path": "dist/request-policy.js",
+      "sha256": "8026cfd0b4307b635a41bce84192f43fa94c0634d2e28010a7d35372bbab4c93"
+    },
+    {
+      "path": "dist/root-configuration.js",
+      "sha256": "089903b72176e06a162ec75201ccdc61d937873d708ba077a0a9d2b0280237a8"
+    },
+    {
+      "path": "dist/root-runtime.js",
+      "sha256": "0c9de8533f20142fc54af6c58edb705002365a32432b27692f15525f88745745"
+    },
+    {
+      "path": "dist/scheduler-state-validation.js",
+      "sha256": "924b992e17c096edd186880fed17c4b484c1555a08b5ffa28973535261964d6a"
+    },
+    {
+      "path": "dist/scheduler-state.js",
+      "sha256": "5f18df017e76f2109f9657bfa405ce2c092cd7bf57117b3dd1ec5a973c7d40f0"
+    },
+    {
+      "path": "dist/scheduler-store.js",
+      "sha256": "290da0547398ac138a99bbb4001145a85d732b58ed622373c3fb56e16e0038a0"
+    },
+    {
+      "path": "dist/spawn-configuration.js",
+      "sha256": "faf55b1dbdbbc08e89a9793bd683fd0d8fa884235b411675df23a638107527b0"
+    },
+    {
+      "path": "dist/supervision.js",
+      "sha256": "66af96e539b0d39da5c4ccc6861aa07a789f570f10f15bbf7349ba525c257d79"
+    },
+    {
+      "path": "dist/system-event-policy.js",
+      "sha256": "62ca9e161042289b952a82316c199cc031407bc1fc37b530e574fc3d3d2b5fd4"
+    },
+    {
+      "path": "dist/terminal-width.js",
+      "sha256": "b7813bb746acc3a7a450033c47a3a8d1543989932ff8dfa46d3c8f4718d3cf5f"
+    },
+    {
+      "path": "dist/tree-policy.js",
+      "sha256": "94832464f0d5f7255e1cf77ca4e74256e0b1f98e3cc03f2bf3951e8357a16ae8"
+    },
+    {
+      "path": "dist/watch-policy.js",
+      "sha256": "d627affb3fd07f1c06fd8fea2ad944b859249859c1f072c4d26a2e5e8f78f656"
+    },
+    {
+      "path": "dist/waves-service.js",
+      "sha256": "e4e29aaf92095f95efb5654071a9d5057fad2f3792ac7842d4897c6a21720d1f"
+    },
+    {
+      "path": "dist/waves-v1.js",
+      "sha256": "2232992be973a2e9391bba47a23d011e4a8111df584951cb57c4fec06921c6db"
+    },
+    {
+      "path": "package.json",
+      "sha256": "9e8ed04c67977a31f711a66aa67c29d404cc52cdae53c3e908856bd2b4a26cc3"
+    },
+    {
+      "path": "skills/luminaries-collaboration/SKILL.md",
+      "sha256": "286ccaffa038acb65ed3dea024f83a37dc709b11921eb9eafac605c4cae00be4"
+    }
+  ]
+}

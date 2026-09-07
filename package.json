@@ -1,0 +1,71 @@
+{
+  "name": "pi-luminaries",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Your constellation of enduring experts for Pi",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "agents",
+    "multi-agent",
+    "collaboration"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deepanshu223/pi-luminaries.git"
+  },
+  "homepage": "https://github.com/deepanshu223/pi-luminaries#readme",
+  "bugs": {
+    "url": "https://github.com/deepanshu223/pi-luminaries/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/extension.d.ts",
+      "import": "./dist/extension.js"
+    },
+    "./waves-v1": {
+      "types": "./dist/waves-v1.d.ts",
+      "import": "./dist/waves-v1.js"
+    }
+  },
+  "pi": {
+    "image": "https://raw.githubusercontent.com/deepanshu223/pi-luminaries/main/docs/assets/cover.png",
+    "extensions": [
+      "./dist/extension.js"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "files": [
+    "README.md",
+    "docs/configuration.md",
+    "docs/usage.md",
+    "docs/assets/*.png",
+    "dist/",
+    "skills/"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json && node scripts/build-manifest.mjs",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
+    "format:check": "prettier --check package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
+    "pack:check": "node scripts/pack-check.mjs",
+    "test": "node --test --test-concurrency=1 --test-timeout=150000 test/**/*.test.mjs",
+    "check": "npm run typecheck && npm run format:check && npm test && npm run pack:check"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.84.1 <0.86.0",
+    "@earendil-works/pi-tui": ">=0.84.1 <0.86.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.20",
+    "prettier": "3.9.5",
+    "typescript": "5.9.3"
+  }
+}
