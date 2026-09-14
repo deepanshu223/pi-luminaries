@@ -467,7 +467,9 @@ test('session binding and immutable activation outcomes are lease-safe and idemp
   assert.strictEqual(store.snapshot(), snapshot);
   assert.equal(publications, 0);
   unsubscribe();
-  await assert.rejects(store.bindSession('agent-a', join(root, 'escape.jsonl')), /escapes/);
+  const outsideSessionFile = join(root, 'escape.jsonl');
+  await writeFile(outsideSessionFile, '');
+  await assert.rejects(store.bindSession('agent-a', outsideSessionFile), /escapes/);
   await assert.rejects(store.bindSession('agent-a', join(sessionDir, 'other.jsonl')), /another session/);
   const activation = await store.startActivation('root', 'prompt');
   await assert.rejects(store.startActivation('root', 'prompt'), /live activation/);

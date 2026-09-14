@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectCommandCenter } from '../../src/command-center-projection.ts';
@@ -186,7 +186,12 @@ test('depth-3 ownership, directory privacy, authority, capacity, close-subtree, 
       requestedBy,
     );
 
-  await spawn('A', 'root', 'A', operator, { role: 'branch lead' });
+  const aPhysicalDir = join(root, '.luminaries-private', 'A');
+  const aInputDir = join(root, '.luminaries-admission-alias');
+  await mkdir(aPhysicalDir, { recursive: true });
+  await symlink(aPhysicalDir, aInputDir, process.platform === 'win32' ? 'junction' : 'dir');
+  await spawn('A', 'root', 'A', operator, { role: 'branch lead' }, { sessionDir: aInputDir });
+  assert.equal(store.snapshot().agents.A.sessionDir, await realpath(aPhysicalDir));
   const aliasedSessionDir = join(root, '.luminaries-private-alias');
   await symlink(
     store.snapshot().agents.A.sessionDir,
@@ -259,7 +264,7 @@ test('depth-3 ownership, directory privacy, authority, capacity, close-subtree, 
   const aSessionFile = join(store.snapshot().agents.A.sessionDir, 'shared.jsonl');
   const bSessionAlias = join(store.snapshot().agents.B.sessionDir, 'shared.jsonl');
   await writeFile(aSessionFile, 'private session');
-  await store.bindSession('A', aSessionFile);
+  await store.bindSession('A', join(aInputDir, 'shared.jsonl'));
   await link(aSessionFile, bSessionAlias);
   await assert.rejects(store.bindSession('B', bSessionAlias), (error) => error.code === 'session_conflict');
   await rm(bSessionAlias);
@@ -423,7 +428,7 @@ test('depth-3 ownership, directory privacy, authority, capacity, close-subtree, 
   assert.throws(() => validateSchedulerState(immutable), /unknown field/);
   const leaked = structuredClone(store.snapshot());
   leaked.agents.A1a.expertCard.publishedRefs = {
-    value: ['.luminaries-private/A1a/session.jsonl'],
+    value: [join(leaked.agents.A1a.sessionDir, 'session.jsonl')],
     source: 'self',
     updatedAtMs: Date.now(),
   };

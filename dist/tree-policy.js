@@ -470,7 +470,7 @@ export function admitAgent(state, statePath, input, principal) {
         createdSeq: seq,
     };
     state.agents[agent.agentId] = agent;
-    return { changed: true, value: agent };
+    return { changed: true, value: state.agents[agent.agentId] };
 }
 export function closeAgent(state, targetId, principal, subtree) {
     if (targetId === state.root.rootId)

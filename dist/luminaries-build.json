@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b13aad1d6757a7ab2c2e43d281855734e40412f2876decf3a208ab86bc16a60f",
+  "buildId": "c45f80970859b8e8e659d44fb4c8f8a4d4b2f12f4884edb3907f2bc4315b1314",
   "files": [
     {
       "path": "dist/accepted-build.js",
@@ -124,7 +124,7 @@
     },
     {
       "path": "dist/luminaries-manager.js",
-      "sha256": "c7e616dcf2512e30dbf6b2463f0e7e9b202a2c48fd1480587ee4314fbf21276e"
+      "sha256": "5c6fe6e3b6bf3263d4022f87d34dcf35a47d8ee9dd87e6572d84e63b27b554c4"
     },
     {
       "path": "dist/luminaries-tools.js",
@@ -204,7 +204,7 @@
     },
     {
       "path": "dist/scheduler-store.js",
-      "sha256": "290da0547398ac138a99bbb4001145a85d732b58ed622373c3fb56e16e0038a0"
+      "sha256": "a49606a44ffc5b96b05dda300abe3a3509774ee2ae5101e13ad336c88828f4e7"
     },
     {
       "path": "dist/spawn-configuration.js",
@@ -224,7 +224,7 @@
     },
     {
       "path": "dist/tree-policy.js",
-      "sha256": "94832464f0d5f7255e1cf77ca4e74256e0b1f98e3cc03f2bf3951e8357a16ae8"
+      "sha256": "a09d4208a1b7a9424f442142a76a5edd35d4c90966a89177798d43d72b054148"
     },
     {
       "path": "dist/watch-policy.js",

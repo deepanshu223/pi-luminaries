@@ -43,7 +43,6 @@ import {
   requestStatus,
   sha256,
   text,
-  within,
   type ActivationRecord,
   type ActivationState,
   type DirectControlAction,
@@ -1152,6 +1151,8 @@ export class SchedulerStore {
           `Admitted agent '${outcome.value.agentId}' lacks a session directory`,
         );
       outcome.value.sessionDir = await canonicalizeSessionDirectory(sessionDir);
+      if (outcome.value.sessionFile)
+        outcome.value.sessionFile = await canonicalizeSessionFile(outcome.value.sessionFile, outcome.value.sessionDir);
       await validatePhysicalSessionNamespace(draft, outcome.value.agentId, 'session_conflict');
       await assertPhysicalReferencesPublic(
         outcome.value.expertCard.publishedRefs?.value ?? [],
@@ -1198,8 +1199,6 @@ export class SchedulerStore {
           );
         admitted.value.sessionDir = await canonicalizeSessionDirectory(sessionDir);
         if (admitted.value.sessionFile) {
-          if (!within(admitted.value.sessionFile, admitted.value.sessionDir))
-            throw new SchedulerStateError('session_escape', 'Session file escapes the private session directory');
           admitted.value.sessionFile = await canonicalizeSessionFile(
             admitted.value.sessionFile,
             admitted.value.sessionDir,
@@ -1237,8 +1236,6 @@ export class SchedulerStore {
       const agent = draft.agents[agentId];
       if (!agent || !agent.sessionDir)
         throw new SchedulerStateError('agent_unavailable', `Agent '${agentId}' has no private session directory`);
-      if (!within(requestedSessionFile, agent.sessionDir))
-        throw new SchedulerStateError('session_escape', 'Session file escapes the private session directory');
       const sessionFile = await canonicalizeSessionFile(requestedSessionFile, agent.sessionDir);
       assertSessionFileAvailable(draft, sessionFile, agentId);
       if (agent.sessionFile === sessionFile) return { changed: false, value: agent };

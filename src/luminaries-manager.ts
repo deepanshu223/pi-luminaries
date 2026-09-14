@@ -1426,6 +1426,7 @@ export class LuminariesManager {
 
   private async startImpl(binding: LuminariesSessionBinding): Promise<void> {
     this.session = binding;
+    const physicalCwd = resolve(await realpath(binding.cwd));
     const statePath = this.statePath(binding);
     const rootId = this.rootId();
     const hostFacts = this.hostFacts();
@@ -1485,6 +1486,7 @@ export class LuminariesManager {
             ...(configuredCapabilities.cwdRoots ?? []).filter((cwd) => !sameCapabilityCwd(cwd, retiredCwdRoot)),
             openedRoot.cwd,
             binding.cwd,
+            physicalCwd,
             ...Object.values(openedState.agents).map((agent) => agent.cwd),
             ...closedAgents.map((agent) => agent.cwd),
           ]),

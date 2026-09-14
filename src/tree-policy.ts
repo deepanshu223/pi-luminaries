@@ -591,7 +591,7 @@ export function admitAgent(
     createdSeq: seq,
   };
   state.agents[agent.agentId] = agent;
-  return { changed: true, value: agent };
+  return { changed: true, value: state.agents[agent.agentId] };
 }
 export function closeAgent(
   state: SchedulerState,

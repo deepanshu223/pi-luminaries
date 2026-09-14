@@ -4,7 +4,7 @@ import { LUMINARIES_IDENTITY } from "./product-identity.js";
 import { emitActivationCompletionState } from "./completion-policy.js";
 import { applyOfflineConfigurationState, beginLiveConfigurationState, finishLiveConfigurationState, } from "./configuration-policy.js";
 import { ControlLog, } from "./control-log.js";
-import { SchedulerStateError, assertActivationLease, absolutePath, buildActivityIndex, canContinuePastIndeterminate, finishActivationState, humanFacingText, mailboxRecordId, mailboxRecordSeq, indeterminateContinuationActivationId, isContinuableIndeterminateEvidence, nextSequence, startActivationState, assertSessionFileAvailable, bootstrapState, deepFreeze, directMailboxRecords, id, integer, mailboxActivationIds, normalizePrincipal, peerMailboxRecord, peerMailboxRecords, releaseMailboxAttemptState, requestStatus, sha256, text, within, } from "./scheduler-state.js";
+import { SchedulerStateError, assertActivationLease, absolutePath, buildActivityIndex, canContinuePastIndeterminate, finishActivationState, humanFacingText, mailboxRecordId, mailboxRecordSeq, indeterminateContinuationActivationId, isContinuableIndeterminateEvidence, nextSequence, startActivationState, assertSessionFileAvailable, bootstrapState, deepFreeze, directMailboxRecords, id, integer, mailboxActivationIds, normalizePrincipal, peerMailboxRecord, peerMailboxRecords, releaseMailboxAttemptState, requestStatus, sha256, text, } from "./scheduler-state.js";
 import { normalizeAgentMetadataPatch, updateAgentMetadata } from "./agent-directory.js";
 import { admitAgent, approveRootExtensionCapability, closeAgent, normalizeAdmission, reconcileRootPolicy, resumeAgent, setAgentArchived, setAgentCapabilities, } from "./tree-policy.js";
 import { assertPhysicalReferencesPublic, canonicalizeSessionDirectory, canonicalizeSessionFile, validatePhysicalPublishedReferences, validatePhysicalSessionNamespace, } from "./private-path-policy.js";
@@ -794,6 +794,8 @@ export class SchedulerStore {
             if (!sessionDir)
                 throw new SchedulerStateError('state_invalid', `Admitted agent '${outcome.value.agentId}' lacks a session directory`);
             outcome.value.sessionDir = await canonicalizeSessionDirectory(sessionDir);
+            if (outcome.value.sessionFile)
+                outcome.value.sessionFile = await canonicalizeSessionFile(outcome.value.sessionFile, outcome.value.sessionDir);
             await validatePhysicalSessionNamespace(draft, outcome.value.agentId, 'session_conflict');
             await assertPhysicalReferencesPublic(outcome.value.expertCard.publishedRefs?.value ?? [], outcome.value.cwd, outcome.value.agentId, draft, this.statePath);
             return outcome;
@@ -820,8 +822,6 @@ export class SchedulerStore {
                 throw new SchedulerStateError('state_invalid', `Admitted agent '${admitted.value.agentId}' lacks a session directory`);
             admitted.value.sessionDir = await canonicalizeSessionDirectory(sessionDir);
             if (admitted.value.sessionFile) {
-                if (!within(admitted.value.sessionFile, admitted.value.sessionDir))
-                    throw new SchedulerStateError('session_escape', 'Session file escapes the private session directory');
                 admitted.value.sessionFile = await canonicalizeSessionFile(admitted.value.sessionFile, admitted.value.sessionDir);
                 assertSessionFileAvailable(draft, admitted.value.sessionFile, admitted.value.agentId);
             }
@@ -847,8 +847,6 @@ export class SchedulerStore {
             const agent = draft.agents[agentId];
             if (!agent || !agent.sessionDir)
                 throw new SchedulerStateError('agent_unavailable', `Agent '${agentId}' has no private session directory`);
-            if (!within(requestedSessionFile, agent.sessionDir))
-                throw new SchedulerStateError('session_escape', 'Session file escapes the private session directory');
             const sessionFile = await canonicalizeSessionFile(requestedSessionFile, agent.sessionDir);
             assertSessionFileAvailable(draft, sessionFile, agentId);
             if (agent.sessionFile === sessionFile)

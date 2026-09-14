@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -32,12 +32,20 @@ function runtimeState(store, agentId) {
 }
 
 test('manager startup owns one root lease, fences stale callers, and closes idempotently', async (t) => {
-  const root = await mkdtemp(join(tmpdir(), 'luminaries-manager-'));
+  const directory = await mkdtemp(join(tmpdir(), 'luminaries-manager-'));
+  let manager;
+  t.after(async () => {
+    await manager?.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const physicalRoot = join(directory, 'project');
+  const root = join(directory, 'project-alias');
+  await mkdir(physicalRoot);
+  await symlink(physicalRoot, root, process.platform === 'win32' ? 'junction' : 'dir');
   const sessionFile = join(root, 'parent.jsonl');
   const agentDir = join(root, 'agent-state');
-  const manager = new LuminariesManager({ sessionId: 'parent-session', sessionFile, cwd: root, agentDir });
+  manager = new LuminariesManager({ sessionId: 'parent-session', sessionFile, cwd: root, agentDir });
   await manager.start();
-  t.after(() => manager.close());
   await manager.start();
   const staleHost = manager.hostForParent(context(root, sessionFile, 'parent-session'));
   assert.equal(manager.lifecycle, 'running');
@@ -46,7 +54,12 @@ test('manager startup owns one root lease, fences stale callers, and closes idem
   assert.equal(manager.store.snapshot().root.maxDepth, 1);
   assert.equal(
     manager.store.statePath,
-    join(agentDir, 'luminaries', 'roots', manager.store.snapshot().root.rootId, 'state.json'),
+    join(await realpath(agentDir), 'luminaries', 'roots', manager.store.snapshot().root.rootId, 'state.json'),
+  );
+  assert.ok(
+    manager.store
+      .snapshot()
+      .agents[manager.store.snapshot().root.rootId].capabilities.cwdRoots.includes(await realpath(root)),
   );
   assert.doesNotMatch(manager.store.statePath, /\.luminaries[/\\].*parent\.jsonl/u);
   const receipt = await staleHost.execute(
@@ -901,7 +914,7 @@ test('Root configuration validates authority and capabilities before changing ow
 test('recipient drains overlap startup, same-turn input, correlation, recovery, and exact-session resume', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'luminaries-failed-reacquire-'));
   const sessionFile = join(root, 'parent.jsonl');
-  const optionalExtension = join(root, 'optional-extension.mjs');
+  const optionalExtension = join(await realpath(root), 'optional-extension.mjs');
   await writeFile(optionalExtension, 'export default function optionalExtension() {}\n');
   const env = { FAKE_ACTOR_DELAY_MS: '2500', FAKE_CONTROL_DELAY_MS: '500', FAKE_STATE_DELAY_MS: '50' };
   const rootModelChanges = [];
@@ -1133,10 +1146,10 @@ test('recipient drains overlap startup, same-turn input, correlation, recovery, 
       model: 'test-provider/test-model',
       thinking: 'low',
       contextMode: 'fresh',
-      cwd: root,
+      cwd: await realpath(root),
       resources: { extensions: [], skills: [], promptTemplates: [], themes: [] },
     });
-    assert.equal(parallel.details.effectiveConfiguration.cwd, explicitCwd);
+    assert.equal(parallel.details.effectiveConfiguration.cwd, await realpath(explicitCwd));
     assert.equal(openCollaboratorCount(manager.store.snapshot()), 4);
     await waitFor(
       () =>

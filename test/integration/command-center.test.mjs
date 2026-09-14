@@ -719,7 +719,7 @@ test('projection keeps semantic content while replacing control envelopes and pr
     const targetRuntimeOwner = await ready(store, 'luminaries-agent-acde1234');
     const senderRuntimeOwner = await ready(store, 'luminaries-agent-peer-secret-hash');
     await store.startActivation('luminaries-agent-peer-secret-hash', 'test');
-    const privateSessionPath = join(root, 'luminaries-agent-acde1234', 'session.jsonl');
+    const privateSessionPath = store.snapshot().agents['luminaries-agent-acde1234'].sessionFile;
     const privateStatePath = join(root, '.pi', 'agent', 'luminaries', 'roots', 'state.json');
     const routed = await store.admitPeerEvent(
       {
