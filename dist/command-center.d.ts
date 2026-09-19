@@ -122,6 +122,7 @@ export declare class LuminariesCommandCenterController {
     private dialogInput;
     private dialogEditor;
     private dialogSelect;
+    private dialogSessionSelect;
     private dialogConfirm;
     private workspaceDialog;
     private dialogNumber;

@@ -231,13 +231,15 @@ export function agentRuntimePhase(state, agent) {
 }
 export function canContinuePastIndeterminate(state, agentId, additionalRecords = []) {
     const agent = state.agents[agentId];
-    if (!agent || agent.lifecycle !== 'open' || agent.attention?.kind !== 'needs_attention')
+    if (!agent || agent.lifecycle !== 'open' || agent.pendingConfiguration)
         return false;
     const activationId = indeterminateContinuationActivationId(state, agentId);
-    if (!activationId)
+    if (agent.attention && !activationId)
         return false;
     const boundary = agent.continuedAfterSeq ?? 0;
-    return [...Object.values(state.mailbox), ...additionalRecords].some((record) => isContinuableIndeterminateEvidence(record, agentId, boundary, activationId));
+    const evidence = [...Object.values(state.mailbox), ...additionalRecords].filter((record) => isContinuableIndeterminateEvidence(record, agentId, boundary, activationId));
+    return (evidence.length > 0 &&
+        evidence.every((record) => !record.activationId || state.activations[record.activationId]?.state !== 'running'));
 }
 export function indeterminateContinuationActivationId(state, agentId) {
     const attention = state.agents[agentId]?.attention;

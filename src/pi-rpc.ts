@@ -101,7 +101,8 @@ const DEFAULTS = {
   maxDiagnostics: 32,
   requestTimeoutMs: 30_000,
 };
-const OVERSIZED_AGENT_END_PREFIX = '{"type":"agent_end","messages":';
+// These summaries repeat messages already emitted individually. Settlement uses agent_settled.
+const REDUNDANT_SUMMARY_PREFIXES = ['{"type":"agent_end","messages":', '{"type":"turn_end","message":'];
 function childError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
@@ -279,25 +280,29 @@ export class PiRpcProcess extends EventEmitter {
   private cancelSettlement?: (error: Error) => void;
   private readonly stderrRing: string[] = [];
   private readonly diagnosticsRing: string[] = [];
-  private readonly limits: Required<Omit<PiRpcLimits, 'skipOversizedRecordPrefix'>>;
+  private readonly limits: JsonlLimits & Required<Omit<PiRpcLimits, keyof JsonlLimits>>;
   private readonly options: PiRpcOptions;
 
   constructor(options: PiRpcOptions) {
     super();
     this.options = options;
     this.limits = {
-      maxRecordBytes: options.limits?.maxRecordBytes ?? 1024 * 1024,
-      maxBufferBytes: options.limits?.maxBufferBytes ?? 2 * 1024 * 1024,
+      maxRecordBytes: options.limits?.maxRecordBytes,
+      maxBufferBytes: options.limits?.maxBufferBytes,
       maxPendingRequests: options.limits?.maxPendingRequests ?? DEFAULTS.maxPendingRequests,
       maxQueuedCommands: options.limits?.maxQueuedCommands ?? DEFAULTS.maxQueuedCommands,
       maxStderrBytes: options.limits?.maxStderrBytes ?? DEFAULTS.maxStderrBytes,
       maxDiagnostics: options.limits?.maxDiagnostics ?? DEFAULTS.maxDiagnostics,
     };
     for (const [name, value] of Object.entries(this.limits)) {
-      if (!Number.isSafeInteger(value) || value < 1)
+      if (value !== undefined && (!Number.isSafeInteger(value) || value < 1))
         throw new RangeError(`Pi RPC ${name} must be a positive safe integer`);
     }
-    if (this.limits.maxBufferBytes < this.limits.maxRecordBytes)
+    if (
+      this.limits.maxBufferBytes !== undefined &&
+      this.limits.maxRecordBytes !== undefined &&
+      this.limits.maxBufferBytes < this.limits.maxRecordBytes
+    )
       throw new RangeError('Pi RPC maxBufferBytes must hold one record');
   }
 
@@ -335,7 +340,7 @@ export class PiRpcProcess extends EventEmitter {
     this.reader = attachJsonlLineReader(
       child.stdout,
       (value) => this.handleRecord(value),
-      { ...this.limits, skipOversizedRecordPrefix: OVERSIZED_AGENT_END_PREFIX },
+      { ...this.limits, skipRecordPrefixes: REDUNDANT_SUMMARY_PREFIXES },
       (error) => this.recordFailure(error),
     );
     child.stdin?.on('error', (error) =>

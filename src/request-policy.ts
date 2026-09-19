@@ -340,7 +340,7 @@ function timeoutDetail(state: Readonly<SchedulerState>, recipientId: string): st
   const declared = recipient.expertCard.focus?.value ?? recipient.assignment.value;
   const focus = declared.length > 512 ? `${declared.slice(0, 511)}…` : declared;
   const mailbox = projectAgentMailbox(state, recipientId);
-  return `The explicit deadline elapsed. Recipient ${recipient.displayName.value} is ${agentRuntimeState(state, recipient)}, declares focus "${focus}", and has ${mailbox.count} queued event${mailbox.count === 1 ? '' : 's'}; its work was not interrupted.`;
+  return `The explicit deadline elapsed. Recipient ${recipient.displayName.value} is ${agentRuntimeState(state, recipient)}, declares focus "${focus}", and has ${mailbox.count} queued event${mailbox.count === 1 ? '' : 's'}; its work was not interrupted. A reply from ongoing work can still be recorded as a notification without restarting this wait. Send a message to the recipient if that work is no longer wanted.`;
 }
 
 function queueRequestResolution(
@@ -368,7 +368,9 @@ function queueRequestResolution(
       : code === 'recipient_closed'
         ? 'The recipient closed before replying.'
         : code === 'request_timeout'
-          ? timeoutDetail(state, request.recipientId)
+          ? cause.outcomeCode === 'request_timed_out_before_delivery'
+            ? 'The wait expired before delivery; the queued request was withdrawn.'
+            : timeoutDetail(state, request.recipientId)
           : `Delivery failed with outcome ${cause.outcomeCode ?? cause.status}.`;
   const route = acceptSchedulerCorrelatedEventState(
     state,

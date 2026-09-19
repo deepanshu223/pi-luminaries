@@ -30,7 +30,7 @@ const ENABLE_MOUSE_TRACKING = '\x1b[?1000h\x1b[?1006h';
 const DISABLE_MOUSE_TRACKING = '\x1b[?1006l\x1b[?1000l';
 
 type WorkspaceMouse = {
-  setEnabled(enabled: boolean): void;
+  setEnabled(enabled: boolean, passWheelToFocus?: boolean): void;
   dispose(): void;
 };
 
@@ -64,6 +64,7 @@ function mouseWheelDirection(data: string): -1 | 1 | undefined {
 
 function installWorkspaceMouse(tui: TUI, component: LuminariesCommandCenterComponent): WorkspaceMouse {
   let enabled = false;
+  let passWheelToFocus = false;
   let disposed = false;
   // Fullscreen Pi owns mouse reporting and defers wheel input to its focused overlay.
   const controlsTerminalMouse = tui.mode !== 'fullscreen';
@@ -71,13 +72,16 @@ function installWorkspaceMouse(tui: TUI, component: LuminariesCommandCenterCompo
     if (!enabled) return undefined;
     const direction = mouseWheelDirection(data);
     if (!direction) return undefined;
+    if (passWheelToFocus) return undefined;
     component.scrollBy(direction);
     tui.requestRender();
     return { consume: true };
   });
   return {
-    setEnabled(value) {
-      if (disposed || enabled === value) return;
+    setEnabled(value, passToFocus = false) {
+      if (disposed) return;
+      passWheelToFocus = value && passToFocus;
+      if (enabled === value) return;
       enabled = value;
       if (controlsTerminalMouse) tui.terminal.write(value ? ENABLE_MOUSE_TRACKING : DISABLE_MOUSE_TRACKING);
     },
@@ -285,6 +289,7 @@ export class LuminariesCommandCenterController {
     const generation = this.uiViewGeneration;
     const initialProjection = this.projection;
     if (!initialProjection) throw new Error(`${PRODUCT} command-center projection is unavailable`);
+    if (!this.nativeUi) ui.notify?.(`Opening ${PRODUCT}…`, 'info');
     this.workspaceOpen = true;
     this.refresh(generation);
     const openPromise = Promise.all([
@@ -520,6 +525,76 @@ export class LuminariesCommandCenterController {
     );
   }
 
+  private async dialogSessionSelect(
+    manager: LuminariesCommandCenterHost,
+    generation: number,
+    title: string,
+    options: string[],
+  ): Promise<string | undefined> {
+    const { SelectList, Text } = await import('@earendil-works/pi-tui');
+    if (!this.isCurrent(manager, generation)) return undefined;
+    return this.workspaceDialog(
+      manager,
+      generation,
+      (pi, tui, _keybindings, done) => {
+        const items = options.map((value) => ({ value, label: value }));
+        const titleText = new Text(title, 0, 0);
+        const footer = new Text('↑↓ or wheel navigate · Enter select · Esc cancel', 0, 0);
+        let selectedValue = items[0]?.value;
+        let viewportSize = 0;
+        const createList = (maxVisible: number) => {
+          const list = new SelectList(items, maxVisible, pi.getSelectListTheme());
+          const selectedIndex = items.findIndex((item) => item.value === selectedValue);
+          list.setSelectedIndex(selectedIndex < 0 ? 0 : selectedIndex);
+          list.onSelectionChange = (item) => {
+            selectedValue = item.value;
+          };
+          list.onSelect = (item) => done(item.value);
+          list.onCancel = () => done(undefined);
+          return list;
+        };
+        let list = createList(1);
+        const scrollBy = (direction: -1 | 1) => {
+          const selectedIndex = items.findIndex((item) => item.value === list.getSelectedItem()?.value);
+          list.setSelectedIndex(selectedIndex + direction);
+          selectedValue = list.getSelectedItem()?.value ?? selectedValue;
+          tui.requestRender();
+        };
+        return {
+          render: (width: number) => {
+            const overlayRows = Math.max(1, Math.min(Math.floor(tui.terminal.rows * 0.8), tui.terminal.rows - 2));
+            const minimumListRows = Math.min(overlayRows, items.length > 1 ? 2 : 1);
+            const footerLines = footer.render(width).slice(0, Math.max(0, overlayRows - minimumListRows - 1));
+            const titleLines = titleText
+              .render(width)
+              .slice(0, Math.max(0, overlayRows - minimumListRows - footerLines.length));
+            const availableRows = Math.max(1, overlayRows - titleLines.length - footerLines.length);
+            const nextViewport = Math.max(
+              1,
+              Math.min(items.length, availableRows - (items.length > availableRows ? 1 : 0)),
+            );
+            if (nextViewport !== viewportSize) {
+              viewportSize = nextViewport;
+              list = createList(viewportSize);
+            }
+            return [...titleLines, ...list.render(width).slice(0, availableRows), ...footerLines];
+          },
+          handleInput: (data: string) => {
+            const direction = mouseWheelDirection(data);
+            if (direction) scrollBy(direction);
+            else list.handleInput(data);
+          },
+          invalidate: () => {
+            titleText.invalidate();
+            list.invalidate();
+            footer.invalidate();
+          },
+        };
+      },
+      true,
+    );
+  }
+
   private async dialogConfirm(
     manager: LuminariesCommandCenterHost,
     generation: number,
@@ -539,13 +614,14 @@ export class LuminariesCommandCenterController {
       keybindings: KeybindingsManager,
       done: (value: T | undefined) => void,
     ) => Component,
+    passWheelToDialog = false,
   ): Promise<T | undefined> {
     const pi = this.nativeUi;
     const tui = this.workspaceTui;
     const keybindings = this.workspaceKeybindings;
     if (!pi || !tui || !keybindings) return undefined;
     this.workspaceDialogClose?.();
-    this.workspaceMouse?.setEnabled(false);
+    this.workspaceMouse?.setEnabled(passWheelToDialog, passWheelToDialog);
     return new Promise<T | undefined>((resolvePromise, rejectPromise) => {
       let finished = false;
       let component: Component | undefined;
@@ -1181,7 +1257,7 @@ export class LuminariesCommandCenterController {
       const sameProject = sessions.filter((session) => canonicalRootCwd && pathKey(session.cwd) === canonicalRootCwd);
       const otherProjects = sessions.filter((session) => !sameProject.includes(session));
       const sameChoices = sameProject.map(choiceFor);
-      const selected = await this.dialogSelect(
+      const selected = await this.dialogSessionSelect(
         manager,
         generation,
         `Bring a Pi session into ${rootCwd ?? 'this constellation'}\nCopies its active conversation; the source stays standalone.`,
@@ -1198,7 +1274,7 @@ export class LuminariesCommandCenterController {
         const otherChoices = otherProjects.map(
           (session) => `${basename(session.cwd) || session.cwd} · ${choiceFor(session)}`,
         );
-        const other = await this.dialogSelect(manager, generation, 'Other projects', [...otherChoices, 'Back']);
+        const other = await this.dialogSessionSelect(manager, generation, 'Other projects', [...otherChoices, 'Back']);
         if (!other || other === 'Back' || !this.isCurrent(manager, generation)) return undefined;
         selectedSession = otherProjects[otherChoices.indexOf(other)];
       }

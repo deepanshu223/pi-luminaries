@@ -27,7 +27,7 @@ async function start(t, mode = 'normal', extra = {}) {
     },
     unsetEnv: extra.unsetEnv,
     limits: { maxStderrBytes: 1024, ...(extra.limits ?? {}) },
-    requestTimeoutMs: 1_000,
+    requestTimeoutMs: extra.requestTimeoutMs ?? 1_000,
   });
   t.after(() => rpc.close());
   rpc.start();
@@ -86,11 +86,43 @@ test('verifies exact private get_state provenance', async (t) => {
   await assert.rejects(rpc.getState({ sessionId: 'wrong-session', privateSessionDir: root }), /ID mismatch/);
 });
 
-test('waits for agent_settled rather than treating the response as the whole-run barrier', async (t) => {
-  const { rpc } = await start(t, 'oversized-agent-end');
-  const result = await rpc.requestAndWaitForSettled({ command: 'oversized-agent-end' });
+test('preserves individual messages and settlement when turn and run summaries exceed the record limit', async (t) => {
+  const { rpc } = await start(t);
+  const messages = [];
+  rpc.on('event', (event) => {
+    if (event.type === 'message_end') messages.push(event.message);
+  });
+  const result = await rpc.requestAndWaitForSettled({ command: 'oversized-summaries' });
   assert.equal(result.response.data.ok, true);
   assert.equal(result.settled.type, 'agent_settled');
+  assert.equal(messages.length, 6);
+  assert.equal(messages[0].content[0].text, 'Inspecting five images.');
+  assert.ok(messages.slice(1).every((message) => message.content[0].data.length === 300 * 1024));
+});
+
+test('carries native-sized multi-image events and large commands while honoring explicit frame limits', async (t) => {
+  const { rpc } = await start(t, 'normal', { requestTimeoutMs: 5_000 });
+  const received = [];
+  rpc.on('event', (event) => {
+    if (event.type === 'tool_execution_end') received.push(event.result.content);
+    if (event.type === 'message_end') received.push(event.message.content);
+  });
+  const result = await rpc.requestAndWaitForSettled({ command: 'native-media' }, 5_000);
+  assert.equal(result.settled.type, 'agent_settled');
+  assert.equal(received.length, 2);
+  for (const content of received) {
+    assert.equal(content.length, 2);
+    for (const [index, image] of content.entries()) {
+      assert.equal(image.data.length, 4.5 * 1024 * 1024 - 4);
+      assert.equal(image.data[0], index === 0 ? 'A' : 'B');
+    }
+  }
+  const echoed = await rpc.request({ command: 'echo-size', message: 'x'.repeat(2 * 1024 * 1024) });
+  assert.equal(echoed.data.characters, 2 * 1024 * 1024);
+  const bounded = await start(t, 'normal', {
+    limits: { maxRecordBytes: 1024 * 1024, maxBufferBytes: 2 * 1024 * 1024 },
+  });
+  await assert.rejects(bounded.rpc.requestAndWaitForSettled({ command: 'native-media' }), /JSONL record exceeds/);
 });
 
 test('intentional close is truthful, awaited, and emits no failure', async (t) => {

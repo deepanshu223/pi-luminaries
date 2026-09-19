@@ -61,20 +61,21 @@ function commandHints(projection, selected, directoryView, rootEnter, readOnly) 
     if (directoryView === 'archived')
         return [
             'Esc return',
+            'v current',
             selected ? 'Enter history' : undefined,
             !readOnly && selected ? 'a actions' : undefined,
             selected ? 'i details' : undefined,
-            'v current',
         ].filter((value) => !!value);
     if (!currentRows.length)
         return [
+            rootEnter === 'return' ? 'Esc return to Pi' : 'Esc return',
+            'v archived',
             !readOnly && projection.capacity.available > 0 ? 'n bring in luminary' : undefined,
             !readOnly && root ? 'a actions' : undefined,
-            'v archived',
-            rootEnter === 'return' ? 'Esc return to Pi' : 'Esc return',
         ].filter((value) => !!value);
     return [
         'Esc return',
+        'v archived',
         !selected
             ? undefined
             : root

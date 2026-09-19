@@ -11,7 +11,7 @@ import {
 import { LuminariesManager } from '../../src/luminaries-manager.ts';
 import { createPiSessionHost } from '../../src/pi-session-host.ts';
 import { LUMINARIES_IDENTITY } from '../../src/product-identity.ts';
-import { agentRuntimeState, openCollaboratorCount, sha256 } from '../../src/scheduler-state.ts';
+import { agentRuntimeState, openCollaboratorCount, requestStatus, sha256 } from '../../src/scheduler-state.ts';
 import { SchedulerStore } from '../../src/scheduler-store.ts';
 import { controls as mailboxControls, event as mailboxEvent } from '../helpers/mailbox.mjs';
 
@@ -1511,22 +1511,21 @@ test('recipient drains overlap startup, same-turn input, correlation, recovery, 
       undefined,
     );
     assert.equal(cancelled.details.requestStatus, 'cancelled');
-    assert.equal(manager.store.snapshot().requests[cancellable.details.correlationId], undefined);
-    for (const [requestId, reference] of [
-      ['await-retired-owned-request', cancellable.details.correlationId],
-      ['await-unknown-request', 'never-issued-request'],
-    ])
-      await assert.rejects(
-        manager.executeForCaller(
-          callerFor(agentId),
-          {
-            toolName: 'luminaries_await',
-            input: { requestId, action: 'wait', requestIds: [reference] },
-          },
-          undefined,
-        ),
-        { code: 'request_missing' },
-      );
+    assert.equal(
+      requestStatus(manager.store.snapshot(), manager.store.snapshot().requests[cancellable.details.correlationId]),
+      'cancelled',
+    );
+    await assert.rejects(
+      manager.executeForCaller(
+        callerFor(agentId),
+        {
+          toolName: 'luminaries_await',
+          input: { requestId: 'await-unknown-request', action: 'wait', requestIds: ['never-issued-request'] },
+        },
+        undefined,
+      ),
+      { code: 'request_missing' },
+    );
 
     const timeoutInput = {
       requestId: 'child-request-timeout',
@@ -1545,7 +1544,8 @@ test('recipient drains overlap startup, same-turn input, correlation, recovery, 
     );
     await waitFor(() => {
       const current = manager.store.snapshot();
-      return current.requests[timeoutRequest.details.correlationId] === undefined;
+      const currentRequest = current.requests[timeoutRequest.details.correlationId];
+      return currentRequest && requestStatus(current, currentRequest) === 'timed_out';
     }, 5_000);
     const lateReplyInput = {
       requestId: 'child-late-reply',
@@ -1553,14 +1553,14 @@ test('recipient drains overlap startup, same-turn input, correlation, recovery, 
       correlationId: timeoutRequest.details.correlationId,
       message: 'Late answer remains visible.',
     };
-    await assert.rejects(
-      manager.executeForCaller(
-        callerFor(responderId),
-        { toolName: 'luminaries_message', input: lateReplyInput },
-        undefined,
-      ),
-      /does not exist/,
+    const lateReply = await manager.executeForCaller(
+      callerFor(responderId),
+      { toolName: 'luminaries_message', input: lateReplyInput },
+      undefined,
     );
+    assert.equal(lateReply.details.disposition, 'notify_only');
+    assert.equal(lateReply.details.requestStatus, 'timed_out');
+    assert.equal(mailboxEvent(manager.store.snapshot(), lateReply.details.eventId).message, lateReplyInput.message);
 
     const interruptedActivation = Object.values(manager.store.snapshot().activations).find(
       (activation) => activation.agentId === agentId && activation.state === 'running',
@@ -2103,6 +2103,21 @@ test('queued peer work reacquires an open runtime-parked actor on its exact priv
         /no running turn.*luminaries_message/,
       );
     assert.equal(mailboxControls(second.store.snapshot()).length, controlCount);
+    const followUp = await secondHost.execute(
+      {
+        toolName: 'luminaries_message',
+        input: {
+          requestId: 'follow-up-after-settlement',
+          action: 'send',
+          recipientId: agentId,
+          mode: 'follow_up',
+          message: 'Continue the work.',
+        },
+      },
+      undefined,
+    );
+    assert.equal(followUp.details.status, 'refused');
+    assert.match(followUp.message, /no running turn.*without follow_up/u);
     const sent = await secondHost.execute(
       {
         toolName: 'luminaries_message',
@@ -2183,7 +2198,10 @@ test('queued peer work reacquires an open runtime-parked actor on its exact priv
       undefined,
     );
     assert.equal(cancelled.details.requestStatus, 'cancelled');
-    assert.equal(second.store.snapshot().requests[request.details.correlationId], undefined);
+    assert.equal(
+      requestStatus(second.store.snapshot(), second.store.snapshot().requests[request.details.correlationId]),
+      'cancelled',
+    );
 
     await assert.rejects(
       secondHost.execute(

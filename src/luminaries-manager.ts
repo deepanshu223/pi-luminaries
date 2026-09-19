@@ -3509,7 +3509,9 @@ export class LuminariesManager {
     const handle = recipient?.humanHandle ?? event.recipientId;
     const deliveryMode = input.action === 'send' || input.action === 'multicast' ? input.mode : undefined;
     let description: string;
-    if (input.action === 'send') {
+    if (event.status === 'refused' && event.outcomeCode === 'runtime_unavailable' && input.mode === 'follow_up')
+      description = `${handle} has no running turn. Send this ${input.action === 'request' ? 'request' : 'message'} again without follow_up mode to start a new turn.`;
+    else if (input.action === 'send') {
       if (event.status === 'refused') description = `Message to ${handle} was not delivered.`;
       else if (event.status === 'failed') description = `Message delivery to ${handle} failed.`;
       else if (event.status === 'indeterminate')
@@ -3534,7 +3536,9 @@ export class LuminariesManager {
       description =
         event.status === 'indeterminate'
           ? 'Reply delivery has an uncertain outcome; inspect before continuing.'
-          : `Reply ${event.status === 'settled' ? 'delivered' : event.status.split('_').join(' ')}.`;
+          : event.mode === 'notify_only'
+            ? `Reply recorded as a notification for ${handle}. No model turn started.`
+            : `Reply ${event.status === 'settled' ? 'delivered' : event.status.split('_').join(' ')}.`;
     else if (input.action === 'cancel')
       description =
         event.status === 'indeterminate'

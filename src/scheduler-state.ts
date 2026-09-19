@@ -507,12 +507,16 @@ export function canContinuePastIndeterminate(
   additionalRecords: readonly MailboxRecord[] = [],
 ): boolean {
   const agent = state.agents[agentId];
-  if (!agent || agent.lifecycle !== 'open' || agent.attention?.kind !== 'needs_attention') return false;
+  if (!agent || agent.lifecycle !== 'open' || agent.pendingConfiguration) return false;
   const activationId = indeterminateContinuationActivationId(state, agentId);
-  if (!activationId) return false;
+  if (agent.attention && !activationId) return false;
   const boundary = agent.continuedAfterSeq ?? 0;
-  return [...Object.values(state.mailbox), ...additionalRecords].some((record) =>
+  const evidence = [...Object.values(state.mailbox), ...additionalRecords].filter((record) =>
     isContinuableIndeterminateEvidence(record, agentId, boundary, activationId),
+  );
+  return (
+    evidence.length > 0 &&
+    evidence.every((record) => !record.activationId || state.activations[record.activationId]?.state !== 'running')
   );
 }
 

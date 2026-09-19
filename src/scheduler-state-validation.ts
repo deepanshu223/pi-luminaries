@@ -848,8 +848,9 @@ function validateCorrelations(state: SchedulerState, nextSeq: number): number {
         throw new SchedulerStateError('state_invalid', `Request '${key}' terminal correlation is inconsistent`);
     }
     const status = requestStatus(state, raw);
-    if (!isCorrelatedRequestStatus(status) || status !== 'pending')
-      throw new SchedulerStateError('state_invalid', `Request '${key}' is not an open correlation`);
+    // A resolved wait may retain its validated correlation for outstanding delivery or work.
+    if (!isCorrelatedRequestStatus(status))
+      throw new SchedulerStateError('state_invalid', `Request '${key}' has an invalid correlation status`);
     maximumSeq = Math.max(maximumSeq, createdSeq);
   }
   return maximumSeq;

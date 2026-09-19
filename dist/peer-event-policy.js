@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { TERMINAL_PEER_EVENT_STATUSES, SchedulerStateError, agentRuntimeState, beginMailboxAttemptState, consumeMailboxAtBoundaryState, discardActivationBeforeWriteState, finishActivationState, peerMailboxRecord, peerMailboxRecords, id, isRecord, isStartingInputEvent, isStrictAncestor, nonemptyText, releaseMailboxAttemptState, sha256, startActivationState, terminalizeMailboxRecordState, nextSequence, text, } from "./scheduler-state.js";
+import { TERMINAL_PEER_EVENT_STATUSES, SchedulerStateError, agentRuntimeState, beginMailboxAttemptState, consumeMailboxAtBoundaryState, discardActivationBeforeWriteState, finishActivationState, peerMailboxRecord, peerMailboxRecords, id, isRecord, isStartingInputEvent, isStrictAncestor, nonemptyText, releaseMailboxAttemptState, requestStatus, sha256, startActivationState, terminalizeMailboxRecordState, nextSequence, text, } from "./scheduler-state.js";
 import { automaticCausesForActivation, directInputBoundarySeq, directOriginForActivation } from "./causal-policy.js";
 import { formatPeerPrompt, peerPresentationDetails, peerSource } from "./peer-prompt.js";
 import { hasDirectInputFence } from "./direct-control-policy.js";
@@ -495,7 +495,9 @@ function correlatedOutcomeMustWaitForOrigin(state, event) {
     if ((event.kind !== 'reply' && event.kind !== 'resolution') || !event.requestId)
         return false;
     const request = state.requests[event.requestId];
-    const origin = request && peerMailboxRecord(state, request.requestEventId);
+    if (!request || requestStatus(state, request) !== 'pending')
+        return false;
+    const origin = peerMailboxRecord(state, request.requestEventId);
     const source = origin?.sourceActivationId ? state.activations[origin.sourceActivationId] : undefined;
     return source?.state === 'running';
 }

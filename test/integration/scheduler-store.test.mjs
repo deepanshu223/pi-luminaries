@@ -195,8 +195,22 @@ test('bootstraps, appends current control truth, checkpoints on close, and reope
   assert.equal(duplicateRecovery.value.duplicate, true);
   assert.equal(duplicateRecovery.revision, beforeDuplicateContinuation);
   assert.equal(store.snapshot().agents['agent-a'].attention?.kind, 'needs_attention');
-  await store.markAgentContinuedAfterIndeterminate('agent-a', operator);
+  // Runtime recovery can finish before the owner acknowledges the earlier uncertain turn.
+  await store.releaseRuntime('agent-a', runtime.value.runtimeOwner, 'runtime_parked');
+  const recoveredProjection = projectCommandCenter(
+    store.snapshot(),
+    new Map(),
+    store.snapshot().revision,
+    undefined,
+    store.snapshot().revision,
+    store.indeterminateEvidenceSnapshot(['agent-a']),
+  );
+  assert.equal(recoveredProjection.agents.find((agent) => agent.agentId === 'agent-a').canContinueWithMessage, true);
+  await store.markAgentContinuedAfterIndeterminate('agent-a', { kind: 'agent', agentId: 'root' });
   assert.equal(store.snapshot().agents['agent-a'].attention, undefined);
+  assert.ok(store.snapshot().agents['agent-a'].continuedAfterSeq > recoveryActivation.value.startedSeq);
+  assert.equal(store.snapshot().activations[recoveryActivation.value.activationId].state, 'indeterminate');
+  assert.equal(store.indeterminateEvidenceSnapshot(['agent-a']).length, 0);
   // A finished turn leaves one settled notify_only completion fact for its parent's card.
   const completions = Object.values(store.snapshot().mailbox).filter(
     (record) => record.systemType === 'background_completion',
@@ -331,6 +345,108 @@ test('recent activity keeps five settled interactions without retaining their fu
   } finally {
     await store.close();
   }
+});
+
+test('expired requests survive in-flight retry and retire after late replies and related work finish', async (t) => {
+  const { root, statePath, store } = await openStore(t);
+  const { sessionDir } = await admitA(store, root);
+  const sessionFile = join(sessionDir, 'agent-a.jsonl');
+  await writeFile(sessionFile, '');
+  await store.bindSession('agent-a', sessionFile);
+  const runtime = await store.claimRuntime('agent-a', process.pid, 'deadline-test');
+  const runtimeOwner = runtime.value.runtimeOwner;
+  await store.markRuntimeSpawned('agent-a', runtimeOwner, process.pid);
+  await store.markRuntimeReady('agent-a', runtimeOwner, process.pid);
+  const working = await store.startActivation('agent-a', 'existing work');
+  const deadlineAtMs = Date.now() + 60_000;
+  const request = await store.acceptCorrelatedRequest(
+    { agentId: 'root', rootId: 'root', runtimeOwner: 'operator', origin: 'operator' },
+    {
+      bridgeRequestId: 'expiring-follow-up',
+      recipientId: 'agent-a',
+      message: 'Return the source packet.',
+      mode: 'follow_up',
+      deadlineAtMs,
+    },
+  );
+  const requestId = request.value.request.requestId;
+  const recordId = request.value.route.event.eventId;
+  const delivery = await store.applyMailboxIntent({ kind: 'begin_delivery', recordId, runtimeOwner });
+  assert.equal(delivery.value.deliveryKind, 'follow_up');
+  const expired = await store.timeoutCorrelatedRequest(requestId, deadlineAtMs + 1);
+  const resolutionId = expired.value.route.event.eventId;
+  const resolution = await store.applyMailboxIntent({
+    kind: 'begin_delivery',
+    recordId: resolutionId,
+    runtimeOwner: 'root-runtime',
+  });
+  await store.applyMailboxIntent({
+    kind: 'admit_boundary',
+    recordId: resolutionId,
+    attemptId: resolution.value.attemptId,
+  });
+  await store.finishActivation(resolution.value.activationId, resolution.value.activationLeaseToken, 'settled');
+  await store.applyMailboxIntent({ kind: 'release_delivery', recordId, attemptId: delivery.value.attemptId });
+  assert.equal(store.snapshot().mailbox[recordId].status, 'accepted');
+  await store.close();
+
+  const reopened = await SchedulerStore.open({ statePath });
+  t.after(() => reopened.close());
+  assert.equal(requestStatus(reopened.snapshot(), reopened.snapshot().requests[requestId]), 'timed_out');
+  const retried = await reopened.applyMailboxIntent({ kind: 'begin_delivery', recordId, runtimeOwner });
+  await reopened.applyMailboxIntent({ kind: 'admit_boundary', recordId, attemptId: retried.value.attemptId });
+  const recipientAuth = { agentId: 'agent-a', rootId: 'root', runtimeOwner };
+  const consultation = await reopened.acceptCorrelatedRequest(recipientAuth, {
+    bridgeRequestId: 'consult-before-answering',
+    recipientId: 'root',
+    message: 'Confirm the source edition.',
+  });
+  await reopened.finishActivation(working.value.activationId, working.value.leaseToken, 'settled');
+  await reopened.retireSurfacedNotifications();
+  assert.equal(requestStatus(reopened.snapshot(), reopened.snapshot().requests[requestId]), 'timed_out');
+  const consultationId = consultation.value.route.event.eventId;
+  const consulted = await reopened.applyMailboxIntent({
+    kind: 'begin_delivery',
+    recordId: consultationId,
+    runtimeOwner: 'root-runtime',
+  });
+  await reopened.applyMailboxIntent({
+    kind: 'admit_boundary',
+    recordId: consultationId,
+    attemptId: consulted.value.attemptId,
+  });
+  const answer = await reopened.acceptCorrelatedReply(
+    { agentId: 'root', rootId: 'root', runtimeOwner: 'operator', origin: 'operator' },
+    {
+      bridgeRequestId: 'edition-confirmed',
+      requestId: consultation.value.request.requestId,
+      message: 'Use the first edition.',
+    },
+  );
+  await reopened.finishActivation(consulted.value.activationId, consulted.value.activationLeaseToken, 'settled');
+  const answerId = answer.value.route.event.eventId;
+  const resumed = await reopened.applyMailboxIntent({ kind: 'begin_delivery', recordId: answerId, runtimeOwner });
+  await reopened.applyMailboxIntent({ kind: 'admit_boundary', recordId: answerId, attemptId: resumed.value.attemptId });
+  const reply = await reopened.acceptCorrelatedReply(recipientAuth, {
+    bridgeRequestId: 'late-source-packet',
+    requestId,
+    message: 'The completed source packet.',
+  });
+  assert.equal(reply.value.route.event.recipientId, 'root');
+  assert.equal(reply.value.route.disposition, 'notify_only');
+  assert.equal(reply.value.route.event.message, 'The completed source packet.');
+  assert.equal(requestStatus(reopened.snapshot(), reopened.snapshot().requests[requestId]), 'timed_out');
+  assert.equal(
+    Object.values(reopened.snapshot().activations).some((item) => item.agentId === 'root' && item.state === 'running'),
+    false,
+  );
+  await reopened.finishActivation(resumed.value.activationId, resumed.value.activationLeaseToken, 'indeterminate');
+  await reopened.retireSurfacedNotifications();
+  assert.equal(requestStatus(reopened.snapshot(), reopened.snapshot().requests[requestId]), 'timed_out');
+  await reopened.releaseRuntime('agent-a', runtimeOwner, 'runtime_parked');
+  await reopened.markAgentContinuedAfterIndeterminate('agent-a', { kind: 'agent', agentId: 'root' });
+  await reopened.retireSurfacedNotifications();
+  assert.equal(reopened.snapshot().requests[requestId], undefined);
 });
 
 test('service request no-replay retains correlation across reopen', async (t) => {

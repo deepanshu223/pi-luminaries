@@ -203,7 +203,13 @@ function nativeModule(dialog = {}) {
   }
   return {
     getMarkdownTheme: () => ({}),
-    getSelectListTheme: () => ({}),
+    getSelectListTheme: () => ({
+      selectedPrefix: (text) => text,
+      selectedText: (text) => text,
+      description: (text) => text,
+      scrollInfo: (text) => text,
+      noMatch: (text) => text,
+    }),
     UserMessageComponent: NativeUser,
     AssistantMessageComponent: NativeAssistant,
     ToolExecutionComponent: NativeTool,
@@ -1117,7 +1123,13 @@ test('workspace remains height-bounded through resize and the native editor', ()
     undefined,
     nativeUi(),
   );
-  assert.ok(component.render(52).length <= rows);
+  const directory = component.render(52);
+  assert.ok(directory.length <= rows);
+  assert.match(directory.join('\n'), /v archived/);
+  component.handleInput('v');
+  assert.match(component.render(52).join('\n'), /No archived collaborators/);
+  assert.match(component.render(52).join('\n'), /v current/);
+  component.handleInput('v');
   rows = 10;
   component.handleInput('\r');
   const hydrated = component.render(52);
@@ -1380,6 +1392,9 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
   let holdDialog = false;
   let tuiMode = 'regular';
   let dialogCancelled = false;
+  let activeDialog;
+  let workspaceTui;
+  let availableSessions = [];
   const selectResponses = [];
   const inputResponses = [];
   const confirmResponses = [];
@@ -1466,7 +1481,7 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
       extensionApprovals.push(args);
     },
     async operatorSessions() {
-      return [];
+      return availableSessions;
     },
     async operatorInspectSessionReference(reference) {
       sessionPreviews.push(reference);
@@ -1519,6 +1534,7 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
         customOptions = options;
         return new Promise((resolvePromise) => {
           const ui = nativeUi(100, 30).tui;
+          workspaceTui = ui;
           ui.mode = tuiMode;
           ui.requestRender = () => workspaceRenders++;
           ui.start = () => {
@@ -1534,12 +1550,14 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
               if (mouseInput === listener) mouseInput = undefined;
             };
           };
-          ui.showOverlay = () => {
+          ui.showOverlay = (dialog) => {
             dialogOverlayCalls++;
+            activeDialog = dialog;
             let hidden = false;
             return {
               hide() {
                 hidden = true;
+                if (activeDialog === dialog) activeDialog = undefined;
                 if (holdDialog) dialogCancelled = true;
               },
               setHidden(value) {
@@ -1587,7 +1605,14 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
       },
     },
   };
-  const controller = new LuminariesCommandCenterController(async () => dialogModule);
+  let releaseNativeUi = () => undefined;
+  const nativeUiReady = new Promise((resolvePromise) => {
+    releaseNativeUi = resolvePromise;
+  });
+  const controller = new LuminariesCommandCenterController(async () => {
+    await nativeUiReady;
+    return dialogModule;
+  });
   t.after(() => controller.dispose());
   controller.attach(context, manager);
   assert.equal(widget, undefined);
@@ -1600,6 +1625,11 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
 
   const opened = controller.open(context);
   await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  assert.equal(customCalls, 0);
+  assert.ok(notifications.some(([, level]) => level === 'info'));
+  releaseNativeUi();
+  for (let index = 0; index < 2; index++) await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  notifications.length = 0;
   assert.equal(customCalls, 1);
   assert.equal(customArgumentCount, 2);
   assert.equal(customOptions.overlay, true);
@@ -1902,12 +1932,44 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
   assert.deepEqual(extensionApprovals, [['npm:pi-web-access', 'user', false]]);
   assert.match(component.render(100).join('\n'), /available for expert selection.*No expert was restarted/su);
   component.handleInput('\x1b');
+  availableSessions = Array.from({ length: 30 }, (_, index) => ({
+    sessionFile: join(process.cwd(), 'sessions', `session-${String(index).padStart(2, '0')}.jsonl`),
+    sessionId: `session-${String(index).padStart(2, '0')}`,
+    cwd: process.cwd(),
+    name: `Session ${index}`,
+    modifiedAtMs: index,
+    messageCount: 1,
+    firstMessage: '',
+  }));
+  selectResponses.push('Bring in a Pi session');
+  component.handleInput('a');
+  for (let index = 0; index < 3; index++) await new Promise((done) => setImmediate(done));
+  assert.ok(activeDialog);
+  workspaceTui.terminal.rows = 12;
+  activeDialog.render(60);
+  for (let index = 0; index < 8; index++) activeDialog.handleInput('\x1b[B');
+  assert.match(activeDialog.render(60).join('\n'), /Session 8/u);
+  const wheel = '\x1b[<65;10;10M';
+  assert.equal(mouseInput(wheel), undefined);
+  activeDialog.handleInput(wheel);
+  workspaceTui.terminal.rows = 8;
+  const resizedList = activeDialog.render(30);
+  assert.ok(resizedList.length <= Math.floor(workspaceTui.terminal.rows * 0.8));
+  assert.match(resizedList.join('\n'), /Session 9/u);
+  activeDialog.handleInput('\r');
+  for (let index = 0; index < 3; index++) await new Promise((done) => setImmediate(done));
+  assert.equal(sessionPreviews.at(-1), availableSessions[9].sessionFile);
+  availableSessions = [];
+  workspaceTui.terminal.rows = 30;
   const namePromptsBeforeInvalidSession = inputTitles.filter((title) => title === 'Luminary name').length;
-  selectResponses.push('Bring in a Pi session', 'Enter a session ID or file path');
+  selectResponses.push('Bring in a Pi session');
   inputResponses.push('not-a-session');
   component.handleInput('a');
+  for (let index = 0; index < 3; index++) await new Promise((done) => setImmediate(done));
+  assert.ok(activeDialog);
+  activeDialog.handleInput('\r');
   for (let index = 0; index < 5; index++) await new Promise((done) => setImmediate(done));
-  assert.deepEqual(sessionPreviews, ['not-a-session']);
+  assert.deepEqual(sessionPreviews.slice(-1), ['not-a-session']);
   assert.equal(inputTitles.filter((title) => title === 'Luminary name').length, namePromptsBeforeInvalidSession);
   assert.deepEqual(adoptionCalls, []);
   selectResponses.push('Root settings', 'Change nesting depth · 3');

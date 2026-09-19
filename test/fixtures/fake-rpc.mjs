@@ -62,11 +62,19 @@ function handle(value) {
     response(value.id, { data: { ok: true }, ok: true });
     return;
   }
-  if (operation === 'oversized-agent-end') {
+  if (operation === 'oversized-summaries') {
     process.stdout.write(JSON.stringify({ type: 'agent_start', reason: 'fixture' }) + '\n');
-    process.stdout.write(
-      JSON.stringify({ type: 'agent_end', messages: [{ role: 'assistant', content: 'x'.repeat(1024 * 1024) }] }) + '\n',
-    );
+    const message = { role: 'assistant', content: [{ type: 'text', text: 'Inspecting five images.' }] };
+    const toolResults = Array.from({ length: 5 }, (_, index) => ({
+      role: 'toolResult',
+      toolCallId: `image-${index}`,
+      toolName: 'read',
+      content: [{ type: 'image', data: 'A'.repeat(300 * 1024), mimeType: 'image/png' }],
+    }));
+    for (const entry of [message, ...toolResults])
+      process.stdout.write(JSON.stringify({ type: 'message_end', message: entry }) + '\n');
+    process.stdout.write(JSON.stringify({ type: 'turn_end', message, toolResults }) + '\n');
+    process.stdout.write(JSON.stringify({ type: 'agent_end', messages: [message, ...toolResults] }) + '\n');
     process.stdout.write(JSON.stringify({ type: 'agent_settled', reason: 'fixture' }) + '\n');
     response(value.id, { data: { ok: true }, ok: true });
     return;
@@ -74,6 +82,28 @@ function handle(value) {
   if (operation === 'stale-settle') {
     process.stdout.write(JSON.stringify({ type: 'agent_settled', reason: 'stale' }) + '\n');
     response(value.id, { ok: true });
+    return;
+  }
+  if (operation === 'native-media') {
+    const content = ['A', 'B'].map((character) => ({
+      type: 'image',
+      data: character.repeat(4.5 * 1024 * 1024 - 4),
+      mimeType: 'image/png',
+    }));
+    const message = { role: 'toolResult', toolCallId: 'media', toolName: 'read', content };
+    process.stdout.write(JSON.stringify({ type: 'agent_start' }) + '\n');
+    process.stdout.write(
+      JSON.stringify({ type: 'tool_execution_end', toolCallId: 'media', result: { content } }) + '\n',
+    );
+    process.stdout.write(JSON.stringify({ type: 'message_end', message }) + '\n');
+    process.stdout.write(JSON.stringify({ type: 'turn_end', message, toolResults: [message] }) + '\n');
+    process.stdout.write(JSON.stringify({ type: 'agent_end', messages: [message] }) + '\n');
+    process.stdout.write(JSON.stringify({ type: 'agent_settled' }) + '\n');
+    response(value.id, { data: { ok: true } });
+    return;
+  }
+  if (operation === 'echo-size') {
+    response(value.id, { data: { characters: value.message.length } });
     return;
   }
   if (operation === 'id-event') {

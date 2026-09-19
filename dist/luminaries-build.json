@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c45f80970859b8e8e659d44fb4c8f8a4d4b2f12f4884edb3907f2bc4315b1314",
+  "buildId": "8cca41216631ff86249d178ef481a710ad510dbba7df6af990edd3640b5291be",
   "files": [
     {
       "path": "dist/accepted-build.js",
@@ -64,11 +64,11 @@
     },
     {
       "path": "dist/command-center-view.js",
-      "sha256": "5c940cca1cd08518270ddfba303ad61fd1aaac019b4d505cc7e1a91f6c50fba6"
+      "sha256": "941f6abe0d156865622f597ab68b3638db056659a5f1f4e06061a5cb641ffa08"
     },
     {
       "path": "dist/command-center.js",
-      "sha256": "e1e62be8eac006b6f487417cf660382d9c4ae79a65b37c1379ab2e7dc9ad0337"
+      "sha256": "3b2a2dfca86423396657dd204f1a744aea7322aadbcdce17afa26e644ecb12bf"
     },
     {
       "path": "dist/completion-policy.js",
@@ -116,7 +116,7 @@
     },
     {
       "path": "dist/jsonl.js",
-      "sha256": "ee9dee3193aaf407094c22e47ceb105d7012655505101ab43ac124404923e36e"
+      "sha256": "58d3c990a457fac220980085cb24e109a3c31659c45fc3901870a6b4d4de746a"
     },
     {
       "path": "dist/luminaries-child-client.js",
@@ -124,11 +124,11 @@
     },
     {
       "path": "dist/luminaries-manager.js",
-      "sha256": "5c6fe6e3b6bf3263d4022f87d34dcf35a47d8ee9dd87e6572d84e63b27b554c4"
+      "sha256": "e7a10caf8dc6ecc62c6e876688ac895ee659bae6fe367aacdb4416e6db8fce44"
     },
     {
       "path": "dist/luminaries-tools.js",
-      "sha256": "705585b7534884d68dafffd062acbab2440a6929ed4e2ae78edb4d3e0e3047a9"
+      "sha256": "81573fbda6aaf152246bdacadf24514a65ea070284b8513674629c69f4a8c5b4"
     },
     {
       "path": "dist/model-boundary-tracker.js",
@@ -148,7 +148,7 @@
     },
     {
       "path": "dist/peer-event-policy.js",
-      "sha256": "57f8fdc8bf7ee750bb03142e649b68b14ed2a19189c25189190df6841a634902"
+      "sha256": "dbd31212fc79faf8dbc42b7b1033e7c049cc44853ce05c74164fe5341be129a7"
     },
     {
       "path": "dist/peer-prompt.js",
@@ -156,7 +156,7 @@
     },
     {
       "path": "dist/pi-rpc.js",
-      "sha256": "39417ca0503bfece6d1c2dde2354885f85d597c082e070f4cd21e8586f16d75c"
+      "sha256": "75e9dee1dbffd8076cedfb3373a4b37c9c9736faf128349323fbef432f8c709f"
     },
     {
       "path": "dist/pi-session-host.js",
@@ -184,7 +184,7 @@
     },
     {
       "path": "dist/request-policy.js",
-      "sha256": "8026cfd0b4307b635a41bce84192f43fa94c0634d2e28010a7d35372bbab4c93"
+      "sha256": "cca820a7d8d91d844f94c54520b6e284fe71c43f3aa42ecb6804941bf72854f2"
     },
     {
       "path": "dist/root-configuration.js",
@@ -196,15 +196,15 @@
     },
     {
       "path": "dist/scheduler-state-validation.js",
-      "sha256": "924b992e17c096edd186880fed17c4b484c1555a08b5ffa28973535261964d6a"
+      "sha256": "e418cd5e6a6fbb284e1312b338b4ed1b617afd64642017bb3667640f55955392"
     },
     {
       "path": "dist/scheduler-state.js",
-      "sha256": "5f18df017e76f2109f9657bfa405ce2c092cd7bf57117b3dd1ec5a973c7d40f0"
+      "sha256": "83c4ba6baf85556ac9ed0cf8a4c60ebc9abed19c015f4078b32b1566923818b9"
     },
     {
       "path": "dist/scheduler-store.js",
-      "sha256": "a49606a44ffc5b96b05dda300abe3a3509774ee2ae5101e13ad336c88828f4e7"
+      "sha256": "5e8791b6779268ed1ec532836a1ff46676451734658ed600f54c2b21afdf9578"
     },
     {
       "path": "dist/spawn-configuration.js",
@@ -240,11 +240,11 @@
     },
     {
       "path": "package.json",
-      "sha256": "9e8ed04c67977a31f711a66aa67c29d404cc52cdae53c3e908856bd2b4a26cc3"
+      "sha256": "a86123d3d4a6b3308fbddb160e412be1dc08a762daf18a773f1c6d645a02c03b"
     },
     {
       "path": "skills/luminaries-collaboration/SKILL.md",
-      "sha256": "286ccaffa038acb65ed3dea024f83a37dc709b11921eb9eafac605c4cae00be4"
+      "sha256": "c48e4441a986fbd4076177e0b212a492dc62660675396c5ecbabfbad35dac43d"
     }
   ]
 }

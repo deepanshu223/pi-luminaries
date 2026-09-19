@@ -178,7 +178,7 @@ function createTrackedDraft(previous) {
         restore: () => raw,
     };
 }
-/** Shared continuation transition: clears needs_attention once newer indeterminate evidence exists. */
+/** Owner continuation acknowledges uncertain history even after the runtime has recovered. */
 function continuePastIndeterminateState(draft, agentId, catalogs) {
     const agent = draft.agents[agentId];
     const cold = [...catalogs.noReplay.values()].map((item) => item.record);
@@ -203,9 +203,6 @@ function causationCrossesClosedAgent(state, eventsById, event) {
 }
 function retireCurrentFacts(state, surfacedNotifications) {
     const activityIndex = buildActivityIndex(state);
-    for (const [requestId, request] of Object.entries(state.requests))
-        if (requestStatus(state, request) !== 'pending')
-            delete state.requests[requestId];
     for (const [watchId, watch] of Object.entries(state.watches))
         if (watch.status !== 'active')
             delete state.watches[watchId];
@@ -222,6 +219,8 @@ function retireCurrentFacts(state, surfacedNotifications) {
     const retainedEvents = new Set();
     const causallyRetainedEvents = new Set();
     for (const request of Object.values(state.requests)) {
+        if (requestStatus(state, request) !== 'pending')
+            continue;
         retainedEvents.add(request.requestEventId);
         causallyRetainedEvents.add(request.requestEventId);
         if (request.terminalEventId)
@@ -250,6 +249,7 @@ function retireCurrentFacts(state, surfacedNotifications) {
             recentInteractionCounts.set(agentId, (recentInteractionCounts.get(agentId) ?? 0) + 1);
     }
     const eventsById = new Map(events.map((event) => [event.eventId, event]));
+    const inFlightRequests = new Set();
     const latestCompletionByAgent = new Map();
     for (const event of events) {
         if (event.systemType !== 'background_completion')
@@ -259,10 +259,11 @@ function retireCurrentFacts(state, surfacedNotifications) {
             latestCompletionByAgent.set(event.senderId, event);
     }
     for (const event of events) {
+        if (event.requestId && (event.status === 'accepted' || event.status === 'sending') && event.kind !== 'resolution')
+            inFlightRequests.add(event.requestId);
         const current = event.status === 'accepted' ||
             event.status === 'sending' ||
             event.status === 'consumed' ||
-            event.status === 'indeterminate' ||
             (!surfacedNotifications?.has(event.eventId) &&
                 event.mode === 'notify_only' &&
                 event.status === 'settled' &&
@@ -287,6 +288,20 @@ function retireCurrentFacts(state, surfacedNotifications) {
             causallyRetainedEvents.add(cause);
             pending.push(cause);
         }
+    }
+    // A finished wait can still have in-flight delivery or work that needs its reply address.
+    // Decide from independently retained events so the request cannot keep itself alive.
+    for (const [requestId, request] of Object.entries(state.requests)) {
+        const status = requestStatus(state, request);
+        if (status !== 'pending' &&
+            !inFlightRequests.has(requestId) &&
+            !((status === 'timed_out' || status === 'cancelled') && causallyRetainedEvents.has(request.requestEventId))) {
+            delete state.requests[requestId];
+            continue;
+        }
+        retainedEvents.add(request.requestEventId);
+        if (request.terminalEventId)
+            retainedEvents.add(request.terminalEventId);
     }
     const controlsWithReplacement = new Set(events.map((event) => event.afterControlId).filter((controlId) => controlId !== undefined));
     for (const [recordId, record] of Object.entries(state.mailbox)) {
@@ -979,8 +994,6 @@ export class SchedulerStore {
                 if (!owned)
                     throw new SchedulerStateError('authority_denied', `Agent '${principal.agentId}' cannot continue '${agentId}' beyond indeterminate evidence`);
             }
-            if (agent.attention?.kind !== 'needs_attention')
-                return { changed: false, value: agent };
             if (!continuePastIndeterminateState(draft, agentId, catalogs))
                 return { changed: false, value: agent };
             affectedRecipientIds.add(agentId);

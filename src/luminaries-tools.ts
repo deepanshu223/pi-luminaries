@@ -496,7 +496,7 @@ export function createLuminariesTools(resolveHost: LuminariesToolHostResolver): 
     definition(
       TOOL.message,
       `Message luminary`,
-      `Send ordinary input to open collaborators. send {recipientId,message,mode?}; request {recipientId,message,mode?,deadlineMs?}; reply {correlationId,message} only; cancel {correlationId} only. A request already yields and its correlation identifies the reply target, so do not immediately await it and never add recipientId to reply. Default wakes idle recipients or steers busy ones; follow_up waits for a later turn; notify_only records without model work.`,
+      `Send ordinary input to open collaborators. send {recipientId,message,mode?}; request {recipientId,message,mode?,deadlineMs?}; reply {correlationId,message} only; cancel {correlationId} only. A request already yields, so do not immediately await it. Answer an incoming request with reply using its correlation, even if its wait expired; finishing your turn does not send the answer. Never add recipientId to reply. Default wakes idle recipients or steers busy ones; follow_up requires a running turn and queues input after it. If that turn has finished, resend without follow_up. notify_only records without model work. Cancelling a pending request ends its wait, not the recipient's running turn.`,
       messageSchema(),
       (value, toolCallId) => normalizeMessage(value, toolCallId),
       (input) => ({ toolName: TOOL.message, input }),

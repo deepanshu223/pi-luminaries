@@ -15,6 +15,7 @@ import {
   isStrictAncestor,
   nonemptyText,
   releaseMailboxAttemptState,
+  requestStatus,
   sha256,
   startActivationState,
   terminalizeMailboxRecordState,
@@ -709,7 +710,8 @@ export function closeQueuedPeerEventsState(
 function correlatedOutcomeMustWaitForOrigin(state: SchedulerState, event: PeerEventRecord): boolean {
   if ((event.kind !== 'reply' && event.kind !== 'resolution') || !event.requestId) return false;
   const request = state.requests[event.requestId];
-  const origin = request && peerMailboxRecord(state, request.requestEventId);
+  if (!request || requestStatus(state, request) !== 'pending') return false;
+  const origin = peerMailboxRecord(state, request.requestEventId);
   const source = origin?.sourceActivationId ? state.activations[origin.sourceActivationId] : undefined;
   return source?.state === 'running';
 }

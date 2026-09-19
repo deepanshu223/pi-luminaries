@@ -48,10 +48,26 @@ test('rejects malformed, oversized, and parser-buffer records with explicit erro
   assert.equal(oversized.errors.length, 1);
   assert.match(oversized.errors[0].message, /exceeds/);
 
-  const buffered = collect({ maxRecordBytes: 20, maxBufferBytes: 20 });
-  buffered.reader.feed('{"unterminated":"xxxxxxxxxxxxxxxx"');
+  const buffered = collect({ maxBufferBytes: 20 });
+  buffered.reader.feed('{"long":"xxxxxxxxxxxxxxxxxxxxxxxx"}\n');
   assert.equal(buffered.errors.length, 1);
   assert.match(buffered.errors[0].message, /buffer|record/);
+});
+
+test('discards redundant summaries across chunks and continues at the next real event', () => {
+  const { reader, values, errors } = collect({
+    maxRecordBytes: 64,
+    maxBufferBytes: 64,
+    skipRecordPrefixes: ['{"type":"turn_end","message":', '{"type":"agent_end","messages":'],
+  });
+  reader.feed('{"type":"turn_');
+  reader.feed('end","message":"');
+  reader.feed('x'.repeat(4096));
+  reader.feed('"}\r\n');
+  reader.feed('{"type":"agent_end","messages":["' + 'x'.repeat(4096) + '"]}\n{"type":"agent_settled"}\n');
+  reader.end();
+  assert.deepEqual(errors, []);
+  assert.deepEqual(values, [{ type: 'agent_settled' }]);
 });
 
 test('unterminated and empty records are malformed', () => {
