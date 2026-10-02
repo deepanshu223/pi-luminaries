@@ -496,6 +496,7 @@ function currentActivity(
   let latest: string | undefined;
   for (const value of actor.activityEvents) {
     if (!isRecord(value) || typeof value.type !== 'string') continue;
+    if (value.type === 'compaction_start') return 'Compacting context';
     if (
       (value.type === 'tool_execution_start' || value.type === 'tool_execution_update') &&
       typeof value.toolName === 'string'
@@ -513,7 +514,7 @@ function currentActivity(
           ? 'Thinking'
           : 'Writing a response';
     } else if (value.type === 'message_update' && isRecord(value.message) && value.message.role === 'assistant')
-      latest = 'Writing a response';
+      latest = value.activityPhase === 'thinking' ? 'Thinking' : 'Writing a response';
     else if (value.type === 'message_end' && isRecord(value.message)) {
       if (value.message.role === 'user') {
         activeTools.clear();

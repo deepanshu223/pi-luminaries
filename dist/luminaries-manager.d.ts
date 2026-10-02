@@ -1,6 +1,6 @@
 import { type CapabilityEnvelope } from './capability-policy.ts';
 import { type ParentContextSnapshot } from './context-session.ts';
-import type { PiSessionChoice, PiSessionHost } from './pi-session-host.ts';
+import { type PiSessionChoice, type PiSessionHost } from './pi-session-host.ts';
 import { type ModelDescriptor } from './spawn-configuration.ts';
 import type { AcceptedBuild } from './accepted-build.ts';
 import { type LuminariesConversationReset, type LuminariesConversationUpdate } from './agent-conversations.ts';

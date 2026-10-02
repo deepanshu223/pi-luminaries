@@ -15,7 +15,12 @@ import {
 import { AgentConfigurationCoordinator } from './configuration-runtime.ts';
 import { planContextLaunch, type ParentContextSnapshot } from './context-session.ts';
 import { appendSpawnCallContext } from './parent-context.ts';
-import type { PiSessionChoice, PiSessionHost, PiSessionInfo } from './pi-session-host.ts';
+import {
+  estimatePiSessionMessages,
+  type PiSessionChoice,
+  type PiSessionHost,
+  type PiSessionInfo,
+} from './pi-session-host.ts';
 import { RequestDeadlineCoordinator } from './request-deadlines.ts';
 import { SupervisionCoordinator } from './supervision.ts';
 import {
@@ -509,6 +514,7 @@ function receiptFacts(details: Readonly<Record<string, unknown>>, includeStatus 
 
 function commandCenterActivityKey(event: unknown): string | undefined {
   if (!isRecord(event) || typeof event.type !== 'string') return undefined;
+  if (event.type === 'compaction_start' || event.type === 'compaction_end') return event.type;
   if (event.type === 'thinking_start') return 'thinking';
   if (event.type === 'message_update' && isRecord(event.assistantMessageEvent))
     return event.assistantMessageEvent.type === 'thinking_start' ||
@@ -1010,7 +1016,7 @@ export class LuminariesManager {
         destinationName: displayName,
       });
       forked = true;
-      const estimate = Math.ceil(Buffer.byteLength(JSON.stringify(source.messages)) / 4);
+      const estimate = estimatePiSessionMessages(source.messages);
       await this.store.admitAgent(
         {
           agentId,
@@ -1896,10 +1902,7 @@ export class LuminariesManager {
             }),
           ) / 4,
         ) + hostFacts.activeToolTokens;
-      const tokenEstimator = configuration.modelKey
-        ? hostFacts.models.find((model) => `${model.provider}/${model.id}` === configuration.modelKey)?.tokenEstimator
-        : undefined;
-      contextPlan = planContextLaunch(configuration, snapshot, overheadTokens, tokenEstimator);
+      contextPlan = planContextLaunch(configuration, snapshot, overheadTokens);
     } catch (error) {
       throw new SchedulerStateError('context_refused', error instanceof Error ? error.message : String(error), {
         cause: error,

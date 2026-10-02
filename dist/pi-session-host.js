@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { buildSessionContext, migrateSessionEntries, parseSessionEntries, SessionManager, } from '@earendil-works/pi-coding-agent';
+import { buildSessionContext, estimateTokens, migrateSessionEntries, parseSessionEntries, SessionManager, } from '@earendil-works/pi-coding-agent';
 import { LUMINARIES_IDENTITY } from "./product-identity.js";
 import { isRecord } from "./scheduler-state.js";
 import { isPiSessionId } from "./identifiers.js";
@@ -19,6 +19,22 @@ function isMessageContent(value) {
 function isPiSessionMessage(value) {
     if (!isRecord(value) || typeof value.role !== 'string' || typeof value.timestamp !== 'number')
         return false;
+    if (value.role === 'system')
+        return ((typeof value.content === 'string' ||
+            (Array.isArray(value.content) &&
+                value.content.every((part) => isRecord(part) && part.type === 'text' && typeof part.text === 'string'))) &&
+            (value.sections === undefined ||
+                (isRecord(value.sections) &&
+                    Object.values(value.sections).every((section) => section === null || typeof section === 'string'))) &&
+            (value.toolsAdded === undefined ||
+                (Array.isArray(value.toolsAdded) &&
+                    value.toolsAdded.every((tool) => isRecord(tool) &&
+                        typeof tool.name === 'string' &&
+                        typeof tool.description === 'string' &&
+                        isRecord(tool.parameters)))) &&
+            (value.toolsRemoved === undefined ||
+                (Array.isArray(value.toolsRemoved) &&
+                    value.toolsRemoved.every((tool) => isRecord(tool) && typeof tool.name === 'string'))));
     if (value.role === 'user')
         return isMessageContent(value.content);
     if (value.role === 'assistant')
@@ -47,6 +63,16 @@ function isPiSessionMessage(value) {
     if (value.role === 'compactionSummary')
         return typeof value.summary === 'string' && typeof value.tokensBefore === 'number';
     return false;
+}
+/** Estimate context using the same public message accounting Pi uses for compaction. */
+export function estimatePiSessionMessages(messages) {
+    let tokens = 0;
+    for (const message of messages) {
+        if (!isPiSessionMessage(message))
+            throw new Error('Transferred Pi context contains an invalid message');
+        tokens += estimateTokens(message);
+    }
+    return tokens;
 }
 function encodedRecord(value) {
     const encoded = JSON.stringify(value);

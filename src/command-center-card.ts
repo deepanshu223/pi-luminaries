@@ -65,6 +65,7 @@ export function stateLabel(state: LuminariesHumanState): string {
 }
 
 export function availabilityLabel(agent: LuminariesCommandCenterAgent): string {
+  if (agent.humanState === 'working' && agent.activity === 'Compacting context') return 'Compacting';
   return agent.humanState === 'idle' ? (agent.runtimeResident ? 'Ready' : 'Parked') : stateLabel(agent.humanState);
 }
 

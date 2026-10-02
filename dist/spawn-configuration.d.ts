@@ -9,7 +9,6 @@ export interface ModelDescriptor {
     maxOutputTokens?: number;
     reasoning?: boolean;
     thinkingLevel?: ThinkingLevel;
-    tokenEstimator?: (messages: readonly unknown[]) => number;
 }
 export interface SpawnConfigurationInput {
     context?: ContextMode;

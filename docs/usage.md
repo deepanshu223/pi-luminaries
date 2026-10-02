@@ -14,11 +14,15 @@ Open `/luminaries` or press `Alt+L` to see your constellation. Your original Pi 
 | `v`     | Switch between Current and Archived            |
 | `Esc`   | Return to the directory or leave the dashboard |
 
-The mouse wheel scrolls the view. In Windows Terminal, hold `Shift` while dragging to select text, then use the terminal's Copy action.
+The mouse wheel scrolls the view. In Pi's fullscreen mode, drag to select text; Pi copies the selection by default. In regular mode on Windows Terminal, hold `Shift` while dragging, then use the terminal's Copy action.
 
 ## Talk to an expert
 
 Open its conversation and send a message, or ask Root to consult it. Sending a message while an expert works steers it at its next safe boundary. To interrupt a running turn from its conversation, press `Ctrl+C` with an empty editor.
+
+In either TUI mode, `Page Up` and `Page Down` scroll the conversation without changing your draft. `Ctrl+Page Up` and `Ctrl+Page Down` navigate within the editor. These are Pi's default keybindings.
+
+An expert shows **Compacting** while Pi summarizes its conversation to make room for continued work, then returns to its normal activity status.
 
 Incoming messages have a distinct sender heading and a compact preview. Pi's expand/collapse shortcut (`Ctrl+O` by default) reveals the complete message alongside expanded tool output.
 
@@ -46,9 +50,9 @@ If the source is not available yet, select Root and open **Actions → Root sett
 
 1. Select Root, open its actions, and choose **Bring in a Pi session**.
 2. Choose a conversation from the current project or **Other projects**, or enter its exact session ID or file path.
-3. Give the new expert a name and task, and optionally describe its expertise.
+3. Optionally name the luminary. Leave the name empty to keep the session's name, or use an automatic star name if the session is unnamed.
 
-Luminaries checks the selected session before asking for the new expert's metadata. It then copies the conversation into a new, parked expert. The original Pi session stays independent. Send a message to continue the adopted conversation.
+Luminaries checks the selected session before asking for a name, then copies its conversation into a new, parked expert. The original Pi session stays independent. Send a message or ask Root to give it work. Root can update its assignment, and the expert can describe its expertise as it works.
 
 ## Continue in standalone Pi
 

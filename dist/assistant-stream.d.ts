@@ -1,5 +1,6 @@
 export interface AssistantStreamState {
     message: Record<string, unknown>;
+    activityPhase?: 'thinking' | 'writing';
 }
 export interface AssistantStreamResult {
     message?: Record<string, unknown>;

@@ -26,6 +26,7 @@ export declare class DurablePiActor implements DeliveryPort {
     private readonly boundaries;
     private readonly activeToolEvents;
     private assistantStream?;
+    private compacting;
     private readonly diagnosticsRing;
     private readonly uiChangeListeners;
     private readonly seenUiNotices;

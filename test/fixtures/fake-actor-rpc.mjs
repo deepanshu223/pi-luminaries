@@ -133,6 +133,10 @@ function settle(reason) {
   emit({ type: 'agent_settled', reason });
 }
 function handle(value) {
+  if (value.type === 'fixture_emit_event') {
+    emit(value.event);
+    return;
+  }
   if (value.type === 'extension_ui_response' && extensionUiAudit) {
     appendFileSync(extensionUiAudit, `${JSON.stringify(value)}\n`);
     extensionUiResponses++;

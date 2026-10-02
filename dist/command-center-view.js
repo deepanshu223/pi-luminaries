@@ -243,7 +243,11 @@ function conversationHeaderLines(agent, width, theme, terminalWidth) {
     const facts = [agent.model, agent.thinking, agent.contextMode].filter(Boolean).join(' · ');
     const label = identity;
     const state = availabilityLabel(agent);
-    const current = agent.activity ? `${state} · ${singleLine(agent.activity)}` : state;
+    const current = state === 'Compacting' && agent.activity === 'Compacting context'
+        ? state
+        : agent.activity
+            ? `${state} · ${singleLine(agent.activity)}`
+            : state;
     const wake = state === 'Parked' ? ' · message to wake' : '';
     const status = `${current}${wake}${agent.attention ? ' · Needs you' : ''} · Esc directory`;
     return [
@@ -442,13 +446,17 @@ export class LuminariesCommandCenterComponent {
         this.clampScrollOffsets(projection);
         const selected = this.selectedAgent(projection);
         if (this.view === 'agent') {
+            if (this.matches(data, 'tui.altScreen.pageUp')) {
+                this.scrollConversation(8);
+                return;
+            }
+            if (this.matches(data, 'tui.altScreen.pageDown')) {
+                this.scrollConversation(-8);
+                return;
+            }
             if (selected.lifecycle === 'closed' || this.actions.readOnlyReason?.()) {
                 if (this.matches(data, 'tui.select.cancel'))
                     this.returnToDirectory();
-                else if (this.matches(data, 'tui.select.pageUp'))
-                    this.scrollConversation(8);
-                else if (this.matches(data, 'tui.select.pageDown'))
-                    this.scrollConversation(-8);
                 return;
             }
             if (!this.editor) {

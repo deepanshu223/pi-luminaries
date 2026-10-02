@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "8cca41216631ff86249d178ef481a710ad510dbba7df6af990edd3640b5291be",
+  "buildId": "f897a234ab51f0fdbef16c9f14b2ff7887092e2fc608388e3494a518573f6749",
   "files": [
     {
       "path": "dist/accepted-build.js",
@@ -12,7 +12,7 @@
     },
     {
       "path": "dist/actor-runtime.js",
-      "sha256": "0aae01548d669ae0029b0f56db7a7da54c129c7bdb76a004d6bae6fe33d0835c"
+      "sha256": "c670990e604d83527702d61c447cdf55b0cd23f8068ea38861a03fef389fa2c8"
     },
     {
       "path": "dist/agent-conversations.js",
@@ -28,7 +28,7 @@
     },
     {
       "path": "dist/assistant-stream.js",
-      "sha256": "787bc515feec4252675d2b5d038e06f76f41c38c66fdbf8df9dc656110b111f0"
+      "sha256": "845590c7bf42c8e483f5a9c3e7dd3d69e2d181790d24e34d91374ba7a01505be"
     },
     {
       "path": "dist/atomic-file.js",
@@ -56,19 +56,19 @@
     },
     {
       "path": "dist/command-center-card.js",
-      "sha256": "c5650841a26e1fedc69f9a513308a755313d041d42dfbb745d5d7451e57d9de5"
+      "sha256": "653cd8a369202a8e72f5d51d2995c71f0c7205fa148132f6fe0593a7d937e4ec"
     },
     {
       "path": "dist/command-center-projection.js",
-      "sha256": "4475a9f0f794ca976d2b8099334ea7a067511dd07277edd2f85784e35556c1a4"
+      "sha256": "cb932124ad7fe0f6f1a1f877dc74ed1da5e9d634187c8bd54f5c8047d8534692"
     },
     {
       "path": "dist/command-center-view.js",
-      "sha256": "941f6abe0d156865622f597ab68b3638db056659a5f1f4e06061a5cb641ffa08"
+      "sha256": "42fb79cd0c5c277081336d6966431175c0e8ead9659362025daf41d8884908dd"
     },
     {
       "path": "dist/command-center.js",
-      "sha256": "3b2a2dfca86423396657dd204f1a744aea7322aadbcdce17afa26e644ecb12bf"
+      "sha256": "d2ad96ad0cf26b74e1ad794358a8fdb1f6ab45dc137bd24a7aef86380236db76"
     },
     {
       "path": "dist/completion-policy.js",
@@ -84,7 +84,7 @@
     },
     {
       "path": "dist/context-session.js",
-      "sha256": "09537c7bc203edc392fe476d1df5928b7ca937093db88869434d4992c56dec11"
+      "sha256": "8ef0b109707f69b64eb89e47801a1db295f3b8f4b9b207f1bc19062a6c3ad841"
     },
     {
       "path": "dist/context-transfer.js",
@@ -124,7 +124,7 @@
     },
     {
       "path": "dist/luminaries-manager.js",
-      "sha256": "e7a10caf8dc6ecc62c6e876688ac895ee659bae6fe367aacdb4416e6db8fce44"
+      "sha256": "98573b2164d90b4d5ba455e66b2585d1f7f2aa4b4703fb6f18ebebfa3f26f3fb"
     },
     {
       "path": "dist/luminaries-tools.js",
@@ -160,7 +160,7 @@
     },
     {
       "path": "dist/pi-session-host.js",
-      "sha256": "f40db656fcc326e406837e11eb21c21e3d6450f649c0f546d50071c60a3361dc"
+      "sha256": "3204de665d2430b0bd6748f9b1a9ef07a6aed677a809cfaf89d9d3cbc6643c4c"
     },
     {
       "path": "dist/private-path-policy.js",
@@ -240,7 +240,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "a86123d3d4a6b3308fbddb160e412be1dc08a762daf18a773f1c6d645a02c03b"
+      "sha256": "1327dd4b3fa713d98b0dfff769e8ca9d18206d31992312e7b56372281dcee3c5"
     },
     {
       "path": "skills/luminaries-collaboration/SKILL.md",

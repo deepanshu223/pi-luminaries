@@ -26,6 +26,10 @@ const keybindings = {
       'tui.select.down': ['\x1b[B'],
       'tui.select.pageUp': ['\x1b[5~'],
       'tui.select.pageDown': ['\x1b[6~'],
+      'tui.altScreen.pageUp': ['\x1b[5~'],
+      'tui.altScreen.pageDown': ['\x1b[6~'],
+      'tui.editor.pageUp': ['\x1b[5;5~'],
+      'tui.editor.pageDown': ['\x1b[6;5~'],
       'tui.select.confirm': ['\r', '\n'],
       'tui.select.cancel': ['\x1b', '\x03'],
       'tui.editor.deleteCharBackward': ['\x7f', '\b'],
@@ -121,6 +125,7 @@ class NativeBash extends NativeExpandable {
 class NativeEditor extends NativeText {
   focused = true;
   text = '';
+  inputs = [];
   actions = new Map();
   getText() {
     return this.text;
@@ -135,10 +140,12 @@ class NativeEditor extends NativeText {
     this.actions.set(action, handler);
   }
   handleInput(data) {
+    this.inputs.push(data);
     if (data === '\x1b') this.onEscape?.();
     else if (data === '\x03') this.actions.get('app.clear')?.();
     else if (data === '\r' || data === '\n') this.onSubmit?.(this.text);
     else if (data.startsWith('\x1b[200~') && data.endsWith('\x1b[201~')) this.text += data.slice(6, -6);
+    else if (data === '\x1b[5;5~' || data === '\x1b[6;5~') return;
     else this.text += data;
   }
   render() {
@@ -228,7 +235,7 @@ function nativeModule(dialog = {}) {
   };
 }
 
-function nativeUi(columns = 80, rows = 40) {
+function nativeUi(columns = 80, rows = 40, mode = 'regular') {
   const terminal = {
     columns,
     rows,
@@ -240,6 +247,7 @@ function nativeUi(columns = 80, rows = 40) {
   };
   return {
     tui: {
+      mode,
       requestRender() {},
       getShowHardwareCursor: () => false,
       setFocus(component) {
@@ -1956,9 +1964,28 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
   const resizedList = activeDialog.render(30);
   assert.ok(resizedList.length <= Math.floor(workspaceTui.terminal.rows * 0.8));
   assert.match(resizedList.join('\n'), /Session 9/u);
+  inputResponses.push('');
   activeDialog.handleInput('\r');
   for (let index = 0; index < 3; index++) await new Promise((done) => setImmediate(done));
   assert.equal(sessionPreviews.at(-1), availableSessions[9].sessionFile);
+  assert.deepEqual(adoptionCalls, [[availableSessions[9].sessionFile, {}]]);
+  component.handleInput('\x1b');
+
+  availableSessions = availableSessions.map((session) => ({ ...session, cwd: join(process.cwd(), 'other-project') }));
+  workspaceTui.terminal.rows = 20;
+  selectResponses.push('Bring in a Pi session');
+  component.handleInput('a');
+  for (let index = 0; index < 3; index++) await new Promise((done) => setImmediate(done));
+  activeDialog.handleInput('\r');
+  for (let index = 0; index < 3; index++) await new Promise((done) => setImmediate(done));
+  activeDialog.render(80);
+  for (let index = 0; index < 25; index++) activeDialog.handleInput(wheel);
+  assert.match(activeDialog.render(80).join('\n'), /Session 25/u);
+  inputResponses.push('');
+  activeDialog.handleInput('\r');
+  for (let index = 0; index < 3; index++) await new Promise((done) => setImmediate(done));
+  assert.deepEqual(adoptionCalls.at(-1), [availableSessions[25].sessionFile, {}]);
+  component.handleInput('\x1b');
   availableSessions = [];
   workspaceTui.terminal.rows = 30;
   const namePromptsBeforeInvalidSession = inputTitles.filter((title) => title === 'Luminary name').length;
@@ -1971,7 +1998,7 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
   for (let index = 0; index < 5; index++) await new Promise((done) => setImmediate(done));
   assert.deepEqual(sessionPreviews.slice(-1), ['not-a-session']);
   assert.equal(inputTitles.filter((title) => title === 'Luminary name').length, namePromptsBeforeInvalidSession);
-  assert.deepEqual(adoptionCalls, []);
+  assert.equal(adoptionCalls.length, 2);
   selectResponses.push('Root settings', 'Change nesting depth · 3');
   inputResponses.push('4');
   component.handleInput('a');
@@ -2142,50 +2169,78 @@ test('waiting collaborators use new-turn input and refuse misleading interrupt a
   assert.deepEqual(calls, []);
 });
 
-test('foreground workspace routes the native editor by stable identity and escapes one level', async () => {
-  const calls = [];
-  let renders = 0;
-  let closed = false;
+test('foreground workspace pages history while preserving the native editor in regular and fullscreen TUI', async () => {
   const child = agent('child-hash', 'root-hash', 1, 'Altair', 'idle');
   child.interactions = ['The keyboard review is complete.'];
   const projection = projectionWith([agent('root-hash', null, 0, 'Root', 'idle'), child]);
-  const component = new LuminariesCommandCenterComponent(
-    () => projection,
-    () => 0,
-    theme,
-    {
-      async send(agentId, message, mode) {
-        calls.push({ action: 'send', agentId, message, mode });
+  const history = Array.from({ length: 48 }, (_, index) => ({
+    role: 'assistant',
+    content: [{ type: 'text', text: `History ${index + 1}` }],
+  }));
+  for (const tuiMode of ['regular', 'fullscreen']) {
+    const calls = [];
+    let renders = 0;
+    let closed = false;
+    const ui = nativeUi(80, 30, tuiMode);
+    const component = new LuminariesCommandCenterComponent(
+      () => projection,
+      () => 0,
+      theme,
+      {
+        subscribe(agentId, listener) {
+          listener({
+            type: 'reset',
+            epoch: 'test',
+            agentId,
+            incarnation: 1,
+            revision: 1,
+            hydrated: true,
+            messages: history,
+          });
+          return () => undefined;
+        },
+        async send(agentId, message, mode) {
+          calls.push({ action: 'send', agentId, message, mode });
+        },
+        async interrupt(agentId) {
+          calls.push({ action: 'interrupt', agentId });
+        },
       },
-      async interrupt(agentId) {
-        calls.push({ action: 'interrupt', agentId });
+      () => renders++,
+      () => {
+        closed = true;
       },
-    },
-    () => renders++,
-    () => {
-      closed = true;
-    },
-    () => 30,
-    undefined,
-    nativeUi(),
-  );
+      () => 30,
+      undefined,
+      ui,
+    );
 
-  component.handleInput('\r');
-  assert.match(component.render(80).join('\n'), /Altair · d-hash.*Esc directory/su);
-  assert.match(component.render(80).join('\n'), /Root › Altair · d-hash/);
-  assert.doesNotMatch(component.render(80).join('\n'), /root-hash|child-hash/u);
-  const message =
-    'Unicode width check: é 漢字 👩‍💻 — this message is deliberately long enough to exercise the native editor. TAIL_VISIBLE_Ω';
-  component.handleInput(`\x1b[200~${message}\x1b[201~`);
-  assert.ok(component.render(80).some((line) => /TAIL_VISIBLE_Ω/.test(line)));
-  component.handleInput('\r');
-  await new Promise((resolvePromise) => setImmediate(resolvePromise));
-  assert.deepEqual(calls[0], { action: 'send', agentId: 'child-hash', message, mode: 'auto' });
-  component.handleInput('\x1b');
-  assert.ok(component.render(80).some((line) => /a actions/.test(line)));
-  component.handleInput('\x1b');
-  assert.equal(closed, true);
-  assert.ok(renders > 0);
+    component.handleInput('\r');
+    assert.match(component.render(80).join('\n'), /Altair · d-hash.*Esc directory/su);
+    assert.match(component.render(80).join('\n'), /Root › Altair · d-hash/);
+    assert.match(component.render(80).join('\n'), /History 48/u);
+    assert.doesNotMatch(component.render(80).join('\n'), /root-hash|child-hash/u);
+    const message = 'First draft line\nSecond draft line TAIL_VISIBLE_Ω';
+    component.handleInput(`\x1b[200~${message}\x1b[201~`);
+    component.handleInput('\x1b[5~');
+    const paged = component.render(80).join('\n');
+    assert.match(paged, /History 40/u);
+    assert.match(paged, /TAIL_VISIBLE_Ω/u);
+    component.handleInput('\x1b[6~');
+    assert.match(component.render(80).join('\n'), /History 48/u);
+    component.handleInput('\x1b[5;5~');
+    component.handleInput('\x1b[6;5~');
+    assert.deepEqual(component.editor.inputs.slice(-2), ['\x1b[5;5~', '\x1b[6;5~']);
+    assert.equal(component.editor.getText(), message);
+    component.handleInput('\r');
+    await new Promise((resolvePromise) => setImmediate(resolvePromise));
+    assert.deepEqual(calls[0], { action: 'send', agentId: 'child-hash', message, mode: 'auto' });
+    component.handleInput('\x1b');
+    assert.ok(component.render(80).some((line) => /a actions/.test(line)));
+    component.handleInput('\x1b');
+    assert.equal(closed, true);
+    assert.ok(renders > 0);
+  }
 });
 
 async function admit(store, root, agentId, parentId, segment, displayName) {

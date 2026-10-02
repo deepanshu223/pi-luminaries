@@ -50,5 +50,7 @@ export interface ForkSessionInput {
     contextNote: string;
     destinationName: string;
 }
+/** Estimate context using the same public message accounting Pi uses for compaction. */
+export declare function estimatePiSessionMessages(messages: readonly unknown[]): number;
 /** Lazy supported Pi API adapter; no Pi runtime object is retained across extension replacement. */
 export declare function createPiSessionHost(): PiSessionHost;

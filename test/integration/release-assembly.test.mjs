@@ -166,7 +166,7 @@ test('the ten-agent manager loop stays coherent across operator motion, close hi
     model: 'test-model',
     thinking: 'low',
     models: [
-      { provider: 'test-provider', id: 'test-model', contextWindow: 128_000, maxOutputTokens: 8_000 },
+      { provider: 'test-provider', id: 'test-model', contextWindow: 128_000, maxOutputTokens: 128_000 },
       { provider: 'test-provider', id: 'tiny-model', contextWindow: 16_000, maxOutputTokens: 4_000 },
     ],
     operatorContextSnapshot: () => ({

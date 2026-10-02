@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import { appendFile, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { estimateTokens, SessionManager } from '@earendil-works/pi-coding-agent';
+import { planContextLaunch } from '../../src/context-session.ts';
 import {
   AttachmentTargetError,
   discoverAttachmentDescriptors,
   LuminariesAttachmentClient,
 } from '../../src/attachment.ts';
 import { LuminariesManager } from '../../src/luminaries-manager.ts';
+import { availabilityLabel, agentCard } from '../../src/command-center-card.ts';
 import { createPiSessionHost } from '../../src/pi-session-host.ts';
 import { LUMINARIES_IDENTITY } from '../../src/product-identity.ts';
 import { agentRuntimeState, openCollaboratorCount, requestStatus, sha256 } from '../../src/scheduler-state.ts';
@@ -30,6 +34,147 @@ function runtimeState(store, agentId) {
   const snapshot = store.snapshot();
   return agentRuntimeState(snapshot, snapshot.agents[agentId]);
 }
+
+test('native child compaction reaches the live status and clears on completion or interruption', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'luminaries-compaction-'));
+  const manager = new LuminariesManager({
+    sessionId: 'parent-session',
+    sessionFile: join(root, 'parent.jsonl'),
+    cwd: root,
+    agentDir: join(root, 'agent-state'),
+    sessionHost: createPiSessionHost(),
+    invocation: { command: process.execPath, args: [resolve('test/fixtures/fake-actor-rpc.mjs')] },
+    env: { FAKE_ACTOR_DELAY_MS: '60000' },
+  });
+  t.after(async () => {
+    await manager.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await manager.start();
+  const spawned = await manager.operatorExecute('luminaries_spawn', {
+    assignment: 'Review the project',
+    ownershipBoundary: 'Read-only review',
+  });
+  const agentId = spawned.details.agent.agentId;
+  await waitFor(() => runtimeState(manager.store, agentId) === 'running');
+  let visible = manager.commandCenterProjection().agents.find((agent) => agent.agentId === agentId);
+  t.after(
+    manager.onCommandCenterChange((projection) => {
+      visible = projection.agents.find((agent) => agent.agentId === agentId);
+    }),
+  );
+  const child = manager.actors.get(agentId).process;
+  const emit = (event) => child.stdin.write(JSON.stringify({ type: 'fixture_emit_event', event }) + '\n');
+  emit({ type: 'message_start', message: { role: 'assistant', content: [], timestamp: 1 } });
+  emit({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'thinking_start', contentIndex: 0 },
+  });
+  emit({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: 'Considering the evidence.' },
+  });
+  await waitFor(() => visible.activity === 'Thinking');
+  emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 1 } });
+  await waitFor(() => visible.activity === 'Writing a response');
+  emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', contentIndex: 1, delta: '{' } });
+  emit({
+    type: 'message_update',
+    assistantMessageEvent: {
+      type: 'toolcall_end',
+      contentIndex: 1,
+      toolCall: { type: 'toolCall', id: 'activity-tool', name: 'read', arguments: { path: 'fieldnotes/evidence.md' } },
+    },
+  });
+  emit({ type: 'message_update', assistantMessageEvent: { type: 'text_start', contentIndex: 2 } });
+  emit({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', contentIndex: 2, delta: 'Writing the answer.' },
+  });
+  await waitFor(() => visible.activity === 'Writing a response');
+  emit({
+    type: 'tool_execution_start',
+    toolCallId: 'activity-tool',
+    toolName: 'read',
+    args: { path: 'fieldnotes/evidence.md' },
+  });
+  await waitFor(() => visible.activity === 'Reading fieldnotes/evidence.md');
+  emit({ type: 'tool_execution_end', toolCallId: 'activity-tool', toolName: 'read', result: {} });
+  await waitFor(() => visible.activity === 'Writing a response');
+  emit({ type: 'compaction_start', reason: 'threshold' });
+  await waitFor(() => visible.activity === 'Compacting context');
+  assert.equal(availabilityLabel(visible), 'Compacting');
+  assert.ok(agentCard(visible).fields.some((field) => field.value === 'Compacting context'));
+  emit({ type: 'compaction_end', reason: 'threshold', aborted: false });
+  await waitFor(() => availabilityLabel(visible) === 'Working');
+  emit({ type: 'compaction_start', reason: 'threshold' });
+  await waitFor(() => availabilityLabel(visible) === 'Compacting');
+  await manager.operatorInterrupt(agentId);
+  await waitFor(() => visible.humanState === 'idle');
+  assert.equal(availabilityLabel(visible), 'Ready');
+  assert.equal(visible.activity, '');
+});
+
+test('native context survives transfer, session seeding, and adoption without changing the source', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'luminaries-native-context-'));
+  const host = createPiSessionHost();
+  const manager = new LuminariesManager({
+    sessionId: 'parent-session',
+    sessionFile: join(root, 'parent.jsonl'),
+    cwd: root,
+    agentDir: join(root, 'profile'),
+    sessionHost: host,
+  });
+  t.after(async () => {
+    await manager.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const native = SessionManager.inMemory(root);
+  const system = {
+    role: 'system',
+    content: 'Keep the native instructions.',
+    timestamp: 1,
+    sections: { project: 'Read-only review.', retired: null },
+    toolsAdded: [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }],
+    toolsRemoved: [{ name: 'write' }],
+  };
+  // Older Pi has no system-message protocol; exercise its ordinary context on that host.
+  const systemSupported = estimateTokens(system) > 0;
+  if (systemSupported) native.appendMessage(system);
+  native.appendMessage({ role: 'user', content: 'Retain this finding.', timestamp: 2 });
+  const messages = native.buildSessionContext().messages;
+  t.diagnostic(systemSupported ? 'Native system records included' : 'Pre-system-message Pi context');
+  for (const context of ['fork', 'recent']) {
+    const plan = planContextLaunch(
+      { context, contextWindow: 32_000, cwd: root },
+      { messages, selectedToolCallId: 'operator-boundary' },
+    );
+    const sessionId = randomUUID();
+    const sessionFile = await host.createSeededSession({
+      sessionId,
+      cwd: root,
+      sessionDir: join(root, context),
+      messages: plan.messages,
+    });
+    assert.deepEqual((await host.readContext(sessionFile, root, sessionId)).messages, messages);
+  }
+  const sourceId = randomUUID();
+  const sourceFile = await host.createSeededSession({
+    sessionId: sourceId,
+    cwd: root,
+    sessionDir: join(root, 'ordinary'),
+    messages,
+  });
+  const sourceBytes = await readFile(sourceFile);
+  await manager.start();
+  const adopted = await manager.operatorAdoptSession(sourceFile, { name: 'Vega' });
+  const agent = manager.store.snapshot().agents[adopted.agentId];
+  const imported = await host.readContext(agent.sessionFile, root, adopted.sessionId);
+  assert.notEqual(adopted.sessionId, sourceId);
+  assert.equal(runtimeState(manager.store, adopted.agentId), 'runtime_parked');
+  assert.deepEqual(imported.messages.slice(0, messages.length), messages);
+  assert.deepEqual(await readFile(sourceFile), sourceBytes);
+});
 
 test('manager startup owns one root lease, fences stale callers, and closes idempotently', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'luminaries-manager-'));

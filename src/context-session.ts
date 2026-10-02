@@ -1,9 +1,8 @@
 import { isRecord } from './scheduler-state.ts';
 import type { ContextMode, EffectiveSpawnConfiguration } from './spawn-configuration.ts';
+import { estimatePiSessionMessages } from './pi-session-host.ts';
 
 const DEFAULT_RECENT_TOKENS = 16_000;
-
-export type ContextTokenEstimator = (messages: readonly unknown[]) => number;
 
 export interface ParentContextSnapshot {
   messages: readonly unknown[];
@@ -30,32 +29,6 @@ export interface ContextLaunchPlan {
   systemPrompt?: string;
 }
 
-interface TokenCounter {
-  usedFallback: boolean;
-  estimate(messages: readonly unknown[]): number;
-}
-
-function tokenCounter(estimator: ContextTokenEstimator | undefined): TokenCounter {
-  let usedFallback = estimator === undefined;
-  return {
-    get usedFallback() {
-      return usedFallback;
-    },
-    estimate(messages) {
-      if (estimator) {
-        try {
-          const value = estimator(messages);
-          if (Number.isSafeInteger(value) && value >= 0) return Math.max(1, value);
-        } catch {
-          // Fall back to the documented bounded estimate when provider accounting is unavailable.
-        }
-        usedFallback = true;
-      }
-      return Math.max(1, Math.ceil(Buffer.byteLength(JSON.stringify(messages)) / 4));
-    },
-  };
-}
-
 function groups(messages: readonly unknown[]): readonly (readonly unknown[])[] {
   const result: unknown[][] = [];
   let current: unknown[] = [];
@@ -71,16 +44,18 @@ function groups(messages: readonly unknown[]): readonly (readonly unknown[])[] {
   return result;
 }
 
-function selectRecent(messages: readonly unknown[], budget: number, counter: TokenCounter): readonly unknown[] {
+function selectRecent(messages: readonly unknown[], budget: number): readonly unknown[] {
   const messageGroups = groups(messages);
   const selected: (readonly unknown[])[] = [];
   let used = 0;
   for (let index = messageGroups.length - 1; index >= 0; index--) {
     const group = messageGroups[index];
     if (!group) continue;
-    const cost = counter.estimate(group);
+    const cost = estimatePiSessionMessages(group);
     if (selected.length === 0 && cost > budget)
-      throw new Error(`The newest protocol-valid context group needs ${cost} tokens but only ${budget} are safe`);
+      throw new Error(
+        `The newest protocol-valid context group needs about ${cost} tokens but only ${budget} are available`,
+      );
     if (used + cost > budget) break;
     selected.unshift(group);
     used += cost;
@@ -88,13 +63,13 @@ function selectRecent(messages: readonly unknown[], budget: number, counter: Tok
   return selected.flatMap((group) => group.map((message) => structuredClone(message)));
 }
 
-function safeTransferTokens(contextWindow: number, maxOutputTokens: number, additionalOverheadTokens: number): number {
-  const available = contextWindow - maxOutputTokens;
-  if (additionalOverheadTokens > available)
+function availableTransferTokens(contextWindow: number, additionalOverheadTokens: number): number {
+  if (additionalOverheadTokens >= contextWindow)
     throw new Error(
-      `The selected model leaves ${Math.max(0, available)} tokens for startup but the effective prompt, tools, resources, and assignment need about ${additionalOverheadTokens}`,
+      `Startup context needs about ${additionalOverheadTokens} tokens but the selected model's context window is ${contextWindow}; shorten the assignment or choose a larger-context model`,
     );
-  return available - additionalOverheadTokens;
+  // Pi fits output to the remaining context; the model's maximum output is not a mandatory reserve.
+  return contextWindow - additionalOverheadTokens;
 }
 
 function sourceModel(messages: readonly unknown[]): string | undefined {
@@ -116,14 +91,9 @@ export function planContextLaunch(
   configuration: EffectiveSpawnConfiguration,
   snapshot: ParentContextSnapshot | undefined,
   additionalOverheadTokens = 0,
-  estimator?: ContextTokenEstimator,
 ): ContextLaunchPlan {
   if (!Number.isSafeInteger(additionalOverheadTokens) || additionalOverheadTokens < 0)
     throw new Error('Context preflight overhead is invalid');
-  const safeTokens =
-    configuration.contextWindow && configuration.maxOutputTokens
-      ? safeTransferTokens(configuration.contextWindow, configuration.maxOutputTokens, additionalOverheadTokens)
-      : undefined;
   if (configuration.context === 'fresh') {
     return {
       receipt: {
@@ -157,16 +127,13 @@ export function planContextLaunch(
   if (!snapshot) throw new Error(`${configuration.context} context requires an exact parent spawn-call snapshot`);
   if (!configuration.contextWindow)
     throw new Error(`${configuration.context} context requires a declared target-model context window`);
-  if (!configuration.maxOutputTokens)
-    throw new Error(`${configuration.context} context requires the target model's declared max output`);
-  if (safeTokens === undefined) throw new Error(`${configuration.context} context fit is unavailable`);
+  const safeTokens = availableTransferTokens(configuration.contextWindow, additionalOverheadTokens);
   const allMessages = snapshot.messages.map((message) => structuredClone(message));
-  const counter = tokenCounter(estimator);
   if (configuration.context === 'fork') {
-    const cost = counter.estimate(allMessages);
+    const cost = estimatePiSessionMessages(allMessages);
     if (cost > safeTokens)
       throw new Error(
-        `Fork context needs about ${cost} tokens but the selected model safely permits ${safeTokens}; compact the parent and retry, or choose recent, fresh, custom, or a larger-context model`,
+        `Fork context needs about ${cost} tokens but the selected model has an estimated ${safeTokens} available; compact the parent and retry, or choose recent, fresh, custom, or a larger-context model`,
       );
     const parentModel = sourceModel(allMessages);
     const warning = warnings(
@@ -174,7 +141,6 @@ export function planContextLaunch(
       configuration.modelKey && parentModel && parentModel !== configuration.modelKey
         ? `Cross-model fork from ${parentModel} to ${configuration.modelKey} relies on Pi compatibility transformation; incompatible reasoning, tool IDs, or media may be normalized.`
         : undefined,
-      counter.usedFallback ? 'Token count uses a conservative target-visible estimate.' : undefined,
     );
     return {
       receipt: {
@@ -195,19 +161,18 @@ export function planContextLaunch(
   const requested = configuration.recentTokens ?? DEFAULT_RECENT_TOKENS;
   if (configuration.recentTokens !== undefined && requested > safeTokens)
     throw new Error(
-      `Explicit recentTokens ${requested} exceeds the measured safe maximum ${safeTokens}; retry with that value or lower`,
+      `Explicit recentTokens ${requested} exceeds the estimated available context ${safeTokens}; retry with that value or lower`,
     );
   const effective = Math.min(requested, safeTokens);
-  if (effective < 1) throw new Error('The selected model has no safe room for recent context');
-  const selected = selectRecent(allMessages, effective, counter);
-  const cost = counter.estimate(selected);
+  if (effective < 1) throw new Error('The selected model has no estimated room for recent context');
+  const selected = selectRecent(allMessages, effective);
+  const cost = estimatePiSessionMessages(selected);
   const warning = warnings(
     configuration.recentTokens === undefined && effective < requested
       ? `Default recent budget reduced from ${requested} to ${effective} tokens for the target model.`
       : configuration.contextWindow && cost > configuration.contextWindow / 2
         ? 'Recent transfer exceeds 50% of the target context window.'
         : undefined,
-    counter.usedFallback ? 'Token count uses a conservative target-visible estimate.' : undefined,
   );
   return {
     receipt: {

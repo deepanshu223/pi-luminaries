@@ -48,6 +48,7 @@ export class DurablePiActor {
     boundaries = new ModelBoundaryTracker();
     activeToolEvents = new Map();
     assistantStream;
+    compacting = false;
     diagnosticsRing = [];
     uiChangeListeners = new Set();
     seenUiNotices = new Set();
@@ -190,7 +191,11 @@ export class DurablePiActor {
     }
     get activityEvents() {
         const assistant = assistantSnapshotEvent(this.assistantStream);
-        return [...(assistant === undefined ? [] : [assistant]), ...this.activeToolEvents.values()];
+        return [
+            ...(assistant === undefined ? [] : [assistant]),
+            ...this.activeToolEvents.values(),
+            ...(this.compacting ? [{ type: 'compaction_start' }] : []),
+        ];
     }
     get diagnostics() {
         return [...this.diagnosticsRing, ...this.rpc.diagnostics];
@@ -414,6 +419,12 @@ export class DurablePiActor {
     captureActivity(value) {
         if (!isRecord(value) || typeof value.type !== 'string')
             return;
+        if (value.type === 'compaction_start') {
+            this.compacting = true;
+            this.assistantStream = undefined;
+        }
+        else if (value.type === 'compaction_end' || value.type === 'agent_settled')
+            this.compacting = false;
         this.assistantStream = applyAssistantStreamEvent(this.assistantStream, value).state;
         if ((value.type === 'tool_execution_start' || value.type === 'tool_execution_update') &&
             typeof value.toolCallId === 'string')

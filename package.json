@@ -60,10 +60,12 @@
     "node": ">=22.19.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.84.1 <0.86.0",
-    "@earendil-works/pi-tui": ">=0.84.1 <0.86.0"
+    "@earendil-works/pi-coding-agent": ">=0.84.1 <2.0.0",
+    "@earendil-works/pi-tui": ">=0.84.1 <2.0.0"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "@types/node": "22.19.20",
     "prettier": "3.9.5",
     "typescript": "5.9.3"

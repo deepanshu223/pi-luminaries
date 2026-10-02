@@ -76,35 +76,55 @@ test('recent context can select a suffix from a long branch without an entry-cou
     {
       context: 'recent',
       contextWindow: 128_000,
-      maxOutputTokens: 8_000,
+      maxOutputTokens: 128_000,
       cwd: process.cwd(),
     },
     { messages: entries.map((entry) => entry.message), selectedToolCallId: 'call-boundary' },
   );
   assert.ok(plan.receipt.transferredMessages > 0);
   assert.ok(plan.receipt.omittedMessages >= 0);
-  assert.match(plan.receipt.warning ?? '', /conservative/i);
 });
 
-test('recent context uses supported target token accounting when supplied', () => {
-  const plan = planContextLaunch(
+test('Pi-native context budgeting counts media structurally and still refuses oversized text', () => {
+  const imagePlan = planContextLaunch(
     {
-      context: 'recent',
+      context: 'fork',
       contextWindow: 32_000,
       maxOutputTokens: 4_000,
-      recentTokens: 100,
       cwd: process.cwd(),
     },
     {
       messages: [
-        messageEntry('user', null, 'user', [{ type: 'text', text: 'one' }]).message,
-        messageEntry('assistant', 'user', 'assistant', [{ type: 'text', text: 'two' }]).message,
+        messageEntry('user', null, 'user', [
+          { type: 'text', text: 'Inspect this image.' },
+          { type: 'image', data: Buffer.alloc(1024 * 1024).toString('base64'), mimeType: 'image/png' },
+        ]).message,
       ],
       selectedToolCallId: 'call-boundary',
     },
-    0,
-    (messages) => messages.length * 7,
   );
-  assert.equal(plan.receipt.estimatedTokens, 14);
-  assert.doesNotMatch(plan.receipt.warning ?? '', /conservative/i);
+  assert.ok(imagePlan.receipt.estimatedTokens > 0);
+  assert.ok(imagePlan.receipt.estimatedTokens < imagePlan.receipt.targetContextWindow);
+
+  assert.throws(
+    () =>
+      planContextLaunch(
+        { context: 'fork', contextWindow: 32_000, maxOutputTokens: 4_000, cwd: process.cwd() },
+        {
+          messages: [messageEntry('user', null, 'user', [{ type: 'text', text: 'x'.repeat(200_000) }]).message],
+          selectedToolCallId: 'call-boundary',
+        },
+      ),
+    /Fork context needs/,
+  );
+});
+
+test('fork budgeting preserves fitting context without reserving maximum output', () => {
+  const configuration = { context: 'fork', contextWindow: 500_000, maxOutputTokens: 500_000, cwd: process.cwd() };
+  const snapshot = {
+    messages: [messageEntry('user', null, 'user', [{ type: 'text', text: 'Retain this conversation.' }]).message],
+    selectedToolCallId: 'call-boundary',
+  };
+  const plan = planContextLaunch(configuration, snapshot, 12_066);
+  assert.deepEqual(plan.messages, snapshot.messages);
 });

@@ -31,6 +31,8 @@ export function stateLabel(state) {
     return 'Idle';
 }
 export function availabilityLabel(agent) {
+    if (agent.humanState === 'working' && agent.activity === 'Compacting context')
+        return 'Compacting';
     return agent.humanState === 'idle' ? (agent.runtimeResident ? 'Ready' : 'Parked') : stateLabel(agent.humanState);
 }
 function sourceLabel(source) {

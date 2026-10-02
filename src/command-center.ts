@@ -531,19 +531,24 @@ export class LuminariesCommandCenterController {
     title: string,
     options: string[],
   ): Promise<string | undefined> {
-    const { SelectList, Text } = await import('@earendil-works/pi-tui');
+    const [{ SelectList, Text }, { DynamicBorder }] = await Promise.all([
+      import('@earendil-works/pi-tui'),
+      import('@earendil-works/pi-coding-agent'),
+    ]);
     if (!this.isCurrent(manager, generation)) return undefined;
     return this.workspaceDialog(
       manager,
       generation,
       (pi, tui, _keybindings, done) => {
         const items = options.map((value) => ({ value, label: value }));
-        const titleText = new Text(title, 0, 0);
-        const footer = new Text('↑↓ or wheel navigate · Enter select · Esc cancel', 0, 0);
+        const selectTheme = pi.getSelectListTheme();
+        const border = new DynamicBorder(selectTheme.selectedText);
+        const titleText = new Text(selectTheme.selectedText(title), 0, 0);
+        const footer = new Text(selectTheme.description('↑↓ or wheel navigate · Enter select · Esc cancel'), 0, 0);
         let selectedValue = items[0]?.value;
         let viewportSize = 0;
         const createList = (maxVisible: number) => {
-          const list = new SelectList(items, maxVisible, pi.getSelectListTheme());
+          const list = new SelectList(items, maxVisible, selectTheme);
           const selectedIndex = items.findIndex((item) => item.value === selectedValue);
           list.setSelectedIndex(selectedIndex < 0 ? 0 : selectedIndex);
           list.onSelectionChange = (item) => {
@@ -563,12 +568,15 @@ export class LuminariesCommandCenterController {
         return {
           render: (width: number) => {
             const overlayRows = Math.max(1, Math.min(Math.floor(tui.terminal.rows * 0.8), tui.terminal.rows - 2));
-            const minimumListRows = Math.min(overlayRows, items.length > 1 ? 2 : 1);
-            const footerLines = footer.render(width).slice(0, Math.max(0, overlayRows - minimumListRows - 1));
+            const borderLines = overlayRows >= 3 ? border.render(width) : [];
+            const contentRows = overlayRows - borderLines.length * 2;
+            const contentWidth = Math.max(1, width - 2);
+            const minimumListRows = Math.min(contentRows, items.length > 1 ? 2 : 1);
+            const footerLines = footer.render(contentWidth).slice(0, Math.max(0, contentRows - minimumListRows - 1));
             const titleLines = titleText
-              .render(width)
-              .slice(0, Math.max(0, overlayRows - minimumListRows - footerLines.length));
-            const availableRows = Math.max(1, overlayRows - titleLines.length - footerLines.length);
+              .render(contentWidth)
+              .slice(0, Math.max(0, contentRows - minimumListRows - footerLines.length));
+            const availableRows = Math.max(1, contentRows - titleLines.length - footerLines.length);
             const nextViewport = Math.max(
               1,
               Math.min(items.length, availableRows - (items.length > availableRows ? 1 : 0)),
@@ -577,7 +585,8 @@ export class LuminariesCommandCenterController {
               viewportSize = nextViewport;
               list = createList(viewportSize);
             }
-            return [...titleLines, ...list.render(width).slice(0, availableRows), ...footerLines];
+            const content = [...titleLines, ...list.render(contentWidth).slice(0, availableRows), ...footerLines];
+            return [...borderLines, ...content.map((line) => ` ${line}`), ...borderLines];
           },
           handleInput: (data: string) => {
             const direction = mouseWheelDirection(data);
@@ -1295,41 +1304,18 @@ export class LuminariesCommandCenterController {
         manager,
         generation,
         'Luminary name',
-        `Optional. Current session name: ${source.name ?? selectedSession?.name ?? 'none'}`,
+        source.name
+          ? `Optional. Leave empty to keep ${source.name}.`
+          : 'Optional. Leave empty to choose a star name automatically.',
       );
       if (nameInput === undefined || !this.isCurrent(manager, generation)) return undefined;
-      const assignment = (
-        await this.dialogEditor(
-          manager,
-          generation,
-          'Luminary assignment',
-          'Describe what this expert should continue working on in the destination constellation.',
-        )
-      )?.trim();
-      if (!assignment || !this.isCurrent(manager, generation)) return undefined;
-      const expertiseInput = await this.dialogInput(
-        manager,
-        generation,
-        'Expertise',
-        'Optional. Enter concise areas separated by commas.',
-      );
-      if (expertiseInput === undefined || !this.isCurrent(manager, generation)) return undefined;
       const adopted = await manager.operatorAdoptSession(source.sessionFile, {
         ...(nameInput.trim() ? { name: nameInput.trim() } : {}),
-        assignment,
-        ...(expertiseInput.trim()
-          ? {
-              expertise: expertiseInput
-                .split(',')
-                .map((value) => value.trim())
-                .filter(Boolean),
-            }
-          : {}),
       });
       return {
         tone: 'success',
         persistent: true,
-        text: `Brought in ${adopted.handle}. The standalone source remains unchanged: ${adopted.sourceSessionFile}`,
+        text: `Brought in ${adopted.handle}, parked. Send a message or ask Root to give it work. The standalone source remains unchanged: ${adopted.sourceSessionFile}`,
       };
     }
     if (action === 'Continue in standalone Pi') {

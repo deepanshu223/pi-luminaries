@@ -94,6 +94,7 @@ export class DurablePiActor implements DeliveryPort {
   private readonly boundaries = new ModelBoundaryTracker();
   private readonly activeToolEvents = new Map<string, unknown>();
   private assistantStream?: AssistantStreamState;
+  private compacting = false;
   private readonly diagnosticsRing: string[] = [];
   private readonly uiChangeListeners = new Set<(event: unknown) => void>();
   private readonly seenUiNotices = new Set<string>();
@@ -255,7 +256,11 @@ export class DurablePiActor implements DeliveryPort {
 
   get activityEvents(): readonly unknown[] {
     const assistant = assistantSnapshotEvent(this.assistantStream);
-    return [...(assistant === undefined ? [] : [assistant]), ...this.activeToolEvents.values()];
+    return [
+      ...(assistant === undefined ? [] : [assistant]),
+      ...this.activeToolEvents.values(),
+      ...(this.compacting ? [{ type: 'compaction_start' }] : []),
+    ];
   }
 
   get diagnostics(): readonly string[] {
@@ -495,6 +500,10 @@ export class DurablePiActor implements DeliveryPort {
 
   private captureActivity(value: unknown): void {
     if (!isRecord(value) || typeof value.type !== 'string') return;
+    if (value.type === 'compaction_start') {
+      this.compacting = true;
+      this.assistantStream = undefined;
+    } else if (value.type === 'compaction_end' || value.type === 'agent_settled') this.compacting = false;
     this.assistantStream = applyAssistantStreamEvent(this.assistantStream, value).state;
     if (
       (value.type === 'tool_execution_start' || value.type === 'tool_execution_update') &&

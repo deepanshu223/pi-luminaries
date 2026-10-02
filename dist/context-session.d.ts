@@ -1,5 +1,4 @@
 import type { ContextMode, EffectiveSpawnConfiguration } from './spawn-configuration.ts';
-export type ContextTokenEstimator = (messages: readonly unknown[]) => number;
 export interface ParentContextSnapshot {
     messages: readonly unknown[];
     sourceSessionFile?: string;
@@ -22,4 +21,4 @@ export interface ContextLaunchPlan {
     noContextFiles: boolean;
     systemPrompt?: string;
 }
-export declare function planContextLaunch(configuration: EffectiveSpawnConfiguration, snapshot: ParentContextSnapshot | undefined, additionalOverheadTokens?: number, estimator?: ContextTokenEstimator): ContextLaunchPlan;
+export declare function planContextLaunch(configuration: EffectiveSpawnConfiguration, snapshot: ParentContextSnapshot | undefined, additionalOverheadTokens?: number): ContextLaunchPlan;
