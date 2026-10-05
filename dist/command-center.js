@@ -124,7 +124,31 @@ export class LuminariesCommandCenterController {
             import('@earendil-works/pi-coding-agent'),
             import('@earendil-works/pi-tui'),
         ]);
-        return { ...pi, Spacer: tui.Spacer, Text: tui.Text };
+        // Pi 1.0 moved built-in renderer selection from the component to its caller.
+        const toolDefinitions = new Map();
+        for (const createDefinition of [
+            pi.createReadToolDefinition,
+            pi.createBashToolDefinition,
+            pi.createPowerShellToolDefinition,
+            pi.createEditToolDefinition,
+            pi.createWriteToolDefinition,
+            pi.createGrepToolDefinition,
+            pi.createFindToolDefinition,
+            pi.createLsToolDefinition,
+        ]) {
+            if (typeof createDefinition !== 'function')
+                continue;
+            const definition = createDefinition(process.cwd());
+            toolDefinitions.set(definition.name, definition);
+        }
+        return {
+            ...pi,
+            Spacer: tui.Spacer,
+            Text: tui.Text,
+            toolDefinitions,
+            // A renderer definition also enables Pi's own collapsible fallback for unknown tools.
+            fallbackToolDefinition: toolDefinitions.size ? {} : undefined,
+        };
     }, luminariesToolDefinitions) {
         this.loadPiConversation = loadPiConversation;
         this.luminariesToolDefinitions = luminariesToolDefinitions;
@@ -258,10 +282,12 @@ export class LuminariesCommandCenterController {
                     ExtensionEditorComponent: pi.ExtensionEditorComponent,
                     ExtensionInputComponent: pi.ExtensionInputComponent,
                     ExtensionSelectorComponent: pi.ExtensionSelectorComponent,
-                    ...(this.luminariesToolDefinitions ? { toolDefinitions: this.luminariesToolDefinitions } : {}),
+                    toolDefinitions: new Map([...(pi.toolDefinitions ?? []), ...(this.luminariesToolDefinitions ?? [])]),
+                    fallbackToolDefinition: pi.fallbackToolDefinition,
                 }, {
                     initialAgentId,
                     rootEnter: this.context?.parentConversation === true ? 'return' : 'conversation',
+                    hideThinkingBlock: this.context?.hideThinkingBlock,
                 });
                 mouse = installWorkspaceMouse(tui, component);
                 this.workspaceComponent = component;

@@ -569,6 +569,10 @@ test('parent root conversation and delivery preserve native history and exact Pi
   const rootTransport = {
     async sendMessage(message, options) {
       const content = message.content;
+      if (content.includes(recoveryMessage)) {
+        assert.equal(content, `From Luminaries:\n${recoveryMessage}`);
+        assert.equal(message.details.source, 'Luminaries');
+      }
       const missedBoundaryFollowUp = content.includes(falseBoundaryMessage);
       const settlesBeforeBoundary = content.includes(settledBeforeBoundaryMessage);
       deliveries.push({ content, options });

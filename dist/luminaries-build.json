@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "buildId": "f897a234ab51f0fdbef16c9f14b2ff7887092e2fc608388e3494a518573f6749",
+  "buildId": "4be6bfb8d3b5360ace04bbc5ffe7819f956a67b308602417a9b5259ea6145039",
   "files": [
     {
       "path": "dist/accepted-build.js",
-      "sha256": "2902c7bb841698b3ba9622bfbcde257b2e0454ad91e637ea241f0d2a7701227e"
+      "sha256": "11b571e87535f72a35021a61db18f50e9e7932a321b60cc36eef87f797b6e47a"
     },
     {
       "path": "dist/actor-pool.js",
@@ -60,15 +60,15 @@
     },
     {
       "path": "dist/command-center-projection.js",
-      "sha256": "cb932124ad7fe0f6f1a1f877dc74ed1da5e9d634187c8bd54f5c8047d8534692"
+      "sha256": "9cd40e0595ef8c42054d7d10b698915850d9f50c93bdf63dea24ba8ff7a12bd4"
     },
     {
       "path": "dist/command-center-view.js",
-      "sha256": "42fb79cd0c5c277081336d6966431175c0e8ead9659362025daf41d8884908dd"
+      "sha256": "1827a64a19e925f0970fde264c6c66a004676602a859f9a8345f1b373819c2eb"
     },
     {
       "path": "dist/command-center.js",
-      "sha256": "d2ad96ad0cf26b74e1ad794358a8fdb1f6ab45dc137bd24a7aef86380236db76"
+      "sha256": "a65123907fe22f3853b4993c1671429e2e8ebbd73f967fcd4c4ef69cdeebcb58"
     },
     {
       "path": "dist/completion-policy.js",
@@ -104,7 +104,7 @@
     },
     {
       "path": "dist/extension.js",
-      "sha256": "29a047221cd05fc4a9d979b225094193eedf648e08a95d734c8601468f76ec96"
+      "sha256": "c2fe5d531441b54c86e020a3d3ac5a648925af6d001e1753cf4d907e491edbab"
     },
     {
       "path": "dist/health-policy.js",
@@ -148,11 +148,11 @@
     },
     {
       "path": "dist/peer-event-policy.js",
-      "sha256": "dbd31212fc79faf8dbc42b7b1033e7c049cc44853ce05c74164fe5341be129a7"
+      "sha256": "5a0824a3de76a09b7b8537e27073f6056dd3662e4bd07f8135275daa8a574bc7"
     },
     {
       "path": "dist/peer-prompt.js",
-      "sha256": "d7feec5c585fc8190835e7fcb676c765c82c618c645def74ba7bb5132a8f7322"
+      "sha256": "20ae77ea95c83425888d276ce117e3a8244967407bc34ef119d747b6c70d43d4"
     },
     {
       "path": "dist/pi-rpc.js",
@@ -237,14 +237,6 @@
     {
       "path": "dist/waves-v1.js",
       "sha256": "2232992be973a2e9391bba47a23d011e4a8111df584951cb57c4fec06921c6db"
-    },
-    {
-      "path": "package.json",
-      "sha256": "1327dd4b3fa713d98b0dfff769e8ca9d18206d31992312e7b56372281dcee3c5"
-    },
-    {
-      "path": "skills/luminaries-collaboration/SKILL.md",
-      "sha256": "c48e4441a986fbd4076177e0b212a492dc62660675396c5ecbabfbad35dac43d"
     }
   ]
 }

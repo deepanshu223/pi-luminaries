@@ -31,8 +31,10 @@ export interface LuminariesComponent {
     invalidate(): void;
     dispose?(): void;
 }
-type NativeToolDefinition = NonNullable<ConstructorParameters<typeof ToolExecutionComponent>[4]>;
+export type NativeToolDefinition = NonNullable<ConstructorParameters<typeof ToolExecutionComponent>[4]>;
 export interface LuminariesNativeConversationModule {
+    toolDefinitions?: ReadonlyMap<string, NativeToolDefinition>;
+    fallbackToolDefinition?: NativeToolDefinition;
     getMarkdownTheme: typeof getMarkdownTheme;
     getSelectListTheme: typeof getSelectListTheme;
     UserMessageComponent: typeof UserMessageComponent;
@@ -57,7 +59,6 @@ export interface LuminariesNativeConversationUi extends LuminariesNativeComponen
     keybindings: KeybindingsManager;
     markdownTheme: MarkdownTheme;
     selectListTheme: SelectListTheme;
-    toolDefinitions?: ReadonlyMap<string, NativeToolDefinition>;
 }
 export declare function friendlyError(value: unknown): string;
 export declare function renderAmbientWidget(projection: LuminariesCommandCenterProjection, width: number, phase: number, theme: LuminariesTheme, terminalWidth?: LuminariesTerminalWidth): string[];
@@ -107,6 +108,7 @@ export declare class LuminariesCommandCenterComponent implements LuminariesCompo
     constructor(getProjection: () => LuminariesCommandCenterProjection, getPhase: () => number, theme: LuminariesTheme, actions: LuminariesCommandCenterActions, requestRender: () => void, done: () => void, getTerminalRows?: () => number, terminalWidth?: LuminariesTerminalWidth, nativeUi?: LuminariesNativeConversationUi, options?: {
         initialAgentId?: string;
         rootEnter?: 'return' | 'manage' | 'conversation';
+        hideThinkingBlock?: boolean;
     });
     render(width: number): string[];
     handleInput(data: string): void;

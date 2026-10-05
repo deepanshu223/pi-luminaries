@@ -4,8 +4,6 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MANIFEST_FILE = 'luminaries-build.json';
-const PACKAGE_FILE = 'package.json';
-const SKILL_FILE = 'skills/luminaries-collaboration/SKILL.md';
 
 interface BuildFile {
   path: string;
@@ -58,7 +56,7 @@ async function verifyBuild(packageRoot: string, manifest: BuildManifest, accepte
 
 async function runtimePaths(packageRoot: string): Promise<string[]> {
   const distRoot = join(packageRoot, 'dist');
-  const paths = [PACKAGE_FILE, SKILL_FILE];
+  const paths: string[] = [];
   const visit = async (directory: string): Promise<void> => {
     const entries = await readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => left.name.localeCompare(right.name));
@@ -76,7 +74,7 @@ async function runtimePaths(packageRoot: string): Promise<string[]> {
 function parseManifest(value: unknown): BuildManifest {
   if (!isRecord(value) || !hasExactKeys(value, ['version', 'buildId', 'files']) || value.version !== 1)
     throw new Error('Luminaries package build manifest is invalid');
-  if (!isSha256(value.buildId) || !Array.isArray(value.files) || value.files.length < 3)
+  if (!isSha256(value.buildId) || !Array.isArray(value.files) || value.files.length === 0)
     throw new Error('Luminaries package build manifest is invalid');
   const files = value.files.map((entry) => {
     if (

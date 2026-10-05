@@ -184,7 +184,7 @@ function conversationFromSession(messages, context) {
                     : textContent(value);
             if (content)
                 projected.push(...(value.details.operatorInput === true
-                    ? [attributedUserMessage('Human operator', content, context.privatePaths)]
+                    ? [attributedUserMessage('Luminaries', content, context.privatePaths)]
                     : friendlyUserMessages(content, context)));
             continue;
         }
@@ -388,7 +388,7 @@ function currentDependency(state, agentId, activityIndex, handles) {
             deliveries.push({
                 order: mailboxRecordSeq(event),
                 text: `Message from ${event.origin === 'operator'
-                    ? 'Human operator'
+                    ? 'Luminaries'
                     : event.origin === 'service'
                         ? `${PRODUCT} service`
                         : event.senderId === state.root.rootId
@@ -410,7 +410,7 @@ function interactionSummary(event, state, agentId, privatePaths, handles) {
     const outgoing = event.senderId === agentId;
     const otherId = outgoing ? event.recipientId : event.senderId;
     const other = !outgoing && event.origin === 'operator'
-        ? 'Human operator'
+        ? 'Luminaries'
         : !outgoing && event.origin === 'service'
             ? `${PRODUCT} service`
             : otherId === state.root.rootId
@@ -433,7 +433,7 @@ function interactionSummary(event, state, agentId, privatePaths, handles) {
 }
 function directActivity(control, state, handles) {
     const from = control.issuer.kind === 'operator'
-        ? 'Human operator'
+        ? 'Luminaries'
         : control.issuer.agentId === state.root.rootId
             ? 'Root'
             : (handles.get(control.issuer.agentId) ?? 'a collaborator');

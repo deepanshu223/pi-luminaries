@@ -370,6 +370,7 @@ export class LuminariesCommandCenterComponent {
         this.terminalWidth = terminalWidth;
         this.nativeUi = nativeUi;
         this.rootEnter = options.rootEnter ?? 'return';
+        this.thinkingHidden = options.hideThinkingBlock ?? false;
         const projection = getProjection();
         const initialAgent = options.initialAgentId
             ? projection.directory.find((agent) => agent.agentId === options.initialAgentId)
@@ -795,7 +796,7 @@ export class LuminariesCommandCenterComponent {
             for (const part of messageParts(message)) {
                 if (part.type !== 'toolCall' || typeof part.id !== 'string' || typeof part.name !== 'string')
                     continue;
-                const tool = new ui.ToolExecutionComponent(part.name, part.id, part.arguments ?? {}, undefined, ui.toolDefinitions?.get(part.name), ui.tui, agent.cwd);
+                const tool = new ui.ToolExecutionComponent(part.name, part.id, part.arguments ?? {}, undefined, ui.toolDefinitions?.get(part.name) ?? ui.fallbackToolDefinition, ui.tui, agent.cwd);
                 const resultMessage = this.nativeResults.get(part.id);
                 const result = resultMessage ? toolResult(resultMessage) : unfinishedToolResult(message);
                 if (result)

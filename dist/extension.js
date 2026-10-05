@@ -23,6 +23,16 @@ import { managedExtensionSpecifier, resolveRootConfiguration, } from "./root-con
 const luminariesProcess = process;
 /** Production Pi extension boundary. Factory registration is intentionally resource-free. */
 export default function luminariesExtension(pi, configurationHost) {
+    const uiContext = (context, parentConversation = true) => ({
+        mode: context.mode,
+        parentConversation,
+        ui: context.ui,
+        hideThinkingBlock: typeof pi.getSettings === 'function'
+            ? (pi.getSettings().hideThinkingBlock ?? false)
+            : SettingsManager.create(context.cwd, getAgentDir(), {
+                projectTrusted: context.isProjectTrusted(),
+            }).getHideThinkingBlock(),
+    });
     const child = readChildBinding();
     let manager;
     let managerCreation;
@@ -470,13 +480,6 @@ function parentTransport(pi, context) {
     return {
         sendMessage: (message, options) => pi.sendMessage(message, options),
         abort: () => context.abort(),
-    };
-}
-function uiContext(context, parentConversation = true) {
-    return {
-        mode: context.mode,
-        parentConversation,
-        ui: context.ui,
     };
 }
 function contextModels(context) {

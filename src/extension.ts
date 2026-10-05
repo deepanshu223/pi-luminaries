@@ -65,6 +65,17 @@ interface ParentTurnState {
 
 /** Production Pi extension boundary. Factory registration is intentionally resource-free. */
 export default function luminariesExtension(pi: ExtensionAPI, configurationHost?: RootConfigurationHost): void {
+  const uiContext = (context: ExtensionContext, parentConversation = true): LuminariesUiContext => ({
+    mode: context.mode,
+    parentConversation,
+    ui: context.ui,
+    hideThinkingBlock:
+      typeof pi.getSettings === 'function'
+        ? (pi.getSettings().hideThinkingBlock ?? false)
+        : SettingsManager.create(context.cwd, getAgentDir(), {
+            projectTrusted: context.isProjectTrusted(),
+          }).getHideThinkingBlock(),
+  });
   const child = readChildBinding();
   let manager: LuminariesManager | undefined;
   let managerCreation: Promise<LuminariesManager> | undefined;
@@ -522,13 +533,6 @@ function parentTransport(pi: ExtensionAPI, context: ExtensionContext) {
       },
     ) => pi.sendMessage(message, options),
     abort: () => context.abort(),
-  };
-}
-function uiContext(context: ExtensionContext, parentConversation = true): LuminariesUiContext {
-  return {
-    mode: context.mode,
-    parentConversation,
-    ui: context.ui,
   };
 }
 type PiModel = NonNullable<ExtensionContext['model']>;

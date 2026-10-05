@@ -16,6 +16,7 @@ type LuminariesExtensionUi = Pick<ExtensionUIContext, 'setWidget'> & Partial<Pic
 export interface LuminariesUiContext {
     mode?: ExtensionContext['mode'];
     parentConversation?: boolean;
+    hideThinkingBlock?: boolean;
     ui?: LuminariesExtensionUi;
 }
 export interface LuminariesCommandCenterHost {

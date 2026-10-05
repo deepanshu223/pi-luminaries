@@ -13,7 +13,7 @@ function clipPresentation(value: string): string {
 }
 
 export function peerSource(event: Readonly<PeerEventRecord>, state: Readonly<SchedulerState>): string {
-  if (event.origin === 'operator') return 'Human operator';
+  if (event.origin === 'operator') return 'Luminaries';
   if (event.origin === 'service') return `${LUMINARIES_IDENTITY.label} service`;
   if (event.origin === 'scheduler' || event.origin === 'system') return `${LUMINARIES_IDENTITY.label} system`;
   return participantName(event.senderId, state);

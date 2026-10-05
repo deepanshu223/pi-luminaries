@@ -477,6 +477,10 @@ export function closeQueuedPeerEventsState(state, closedAgentIds) {
             isStrictAncestor(state, event.recipientId, event.senderId);
         if (!targetClosed && !ownerClosedSource)
             continue;
+        if (ownerClosedSource && !targetClosed && event.origin === 'system' && event.systemType === 'health_attention') {
+            terminal.push(terminalizeMailboxRecordState(state, event, 'aborted', 'health_notice_source_closed').value);
+            continue;
+        }
         const inFlight = event.status === 'sending' || event.status === 'consumed';
         terminal.push(terminalizeMailboxRecordState(state, event, inFlight ? 'indeterminate' : 'failed', inFlight
             ? 'close_delivery_boundary_indeterminate'

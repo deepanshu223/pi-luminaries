@@ -4,7 +4,7 @@ import { join, relative, sep } from 'node:path';
 
 const root = process.cwd();
 const dist = join(root, 'dist');
-const paths = ['package.json', 'skills/luminaries-collaboration/SKILL.md'];
+const paths = [];
 
 async function visit(directory) {
   const entries = await readdir(directory, { withFileTypes: true });

@@ -48,6 +48,45 @@ async function admitA(store, root) {
   });
   return { result, sessionDir };
 }
+test('closing an expert retires its pending health notice without hiding uncertain work delivery', async (t) => {
+  for (const type of ['health_attention', 'background_completion']) {
+    const { root, store } = await openStore(t);
+    await admitA(store, root);
+    const activation = await store.startActivation('root', 'prompt');
+    const input = await store.admitPeerEvent(
+      { agentId: 'root', rootId: 'root', runtimeOwner: 'operator', origin: 'operator' },
+      { bridgeRequestId: 'child-task', recipientId: 'agent-a', message: 'Review the current work.' },
+    );
+    const event = await store.admitSystemEvent({
+      dedupeKey: `close-${type}`,
+      type,
+      senderId: 'agent-a',
+      recipientId: 'root',
+      message: 'Review the expert status.',
+      traceId: input.value.event.traceId,
+      causationId: input.value.event.eventId,
+    });
+    const delivery = await store.applyMailboxIntent({
+      kind: 'begin_delivery',
+      recordId: event.value.event.eventId,
+      runtimeOwner: 'owner',
+    });
+    assert.equal(delivery.value.deliveryKind, 'steer');
+    await store.closeAgent('agent-a', operator);
+    const projection = projectCommandCenter(
+      store.snapshot(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store.indeterminateEvidenceSnapshot(['root']),
+    );
+    assert.equal(projection.agents.find((entry) => entry.agentId === 'root').attention, type !== 'health_attention');
+    assert.equal(store.snapshot().activations[activation.value.activationId].state, 'running');
+    await store.finishActivation(activation.value.activationId, activation.value.leaseToken, 'settled');
+  }
+});
+
 test('bootstraps, appends current control truth, checkpoints on close, and reopens', async (t) => {
   const { root, statePath, store } = await openStore(t);
   const controlDirectory = join(root, 'luminaries', 'control');

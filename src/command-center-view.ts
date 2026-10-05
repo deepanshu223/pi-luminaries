@@ -84,7 +84,7 @@ export interface LuminariesComponent {
   dispose?(): void;
 }
 
-type NativeToolDefinition = NonNullable<ConstructorParameters<typeof ToolExecutionComponent>[4]>;
+export type NativeToolDefinition = NonNullable<ConstructorParameters<typeof ToolExecutionComponent>[4]>;
 type NativeToolResult = Parameters<InstanceType<typeof ToolExecutionComponent>['updateResult']>[0];
 type NativeAssistantMessage = NonNullable<ConstructorParameters<typeof AssistantMessageComponent>[0]>;
 type NativeCustomMessage = ConstructorParameters<typeof CustomMessageComponent>[0];
@@ -93,6 +93,8 @@ type NativeCompactionSummaryMessage = ConstructorParameters<typeof CompactionSum
 type LuminariesNativeEditor = InstanceType<typeof CustomEditor>;
 
 export interface LuminariesNativeConversationModule {
+  toolDefinitions?: ReadonlyMap<string, NativeToolDefinition>;
+  fallbackToolDefinition?: NativeToolDefinition;
   getMarkdownTheme: typeof getMarkdownTheme;
   getSelectListTheme: typeof getSelectListTheme;
   UserMessageComponent: typeof UserMessageComponent;
@@ -119,7 +121,6 @@ export interface LuminariesNativeConversationUi extends LuminariesNativeComponen
   keybindings: KeybindingsManager;
   markdownTheme: MarkdownTheme;
   selectListTheme: SelectListTheme;
-  toolDefinitions?: ReadonlyMap<string, NativeToolDefinition>;
 }
 
 function visibleWidth(value: string, terminalWidth: LuminariesTerminalWidth): number {
@@ -595,7 +596,11 @@ export class LuminariesCommandCenterComponent implements LuminariesComponent {
     getTerminalRows: () => number = () => DEFAULT_TERMINAL_ROWS,
     terminalWidth: LuminariesTerminalWidth = HOST_TERMINAL_WIDTH,
     nativeUi?: LuminariesNativeConversationUi,
-    options: { initialAgentId?: string; rootEnter?: 'return' | 'manage' | 'conversation' } = {},
+    options: {
+      initialAgentId?: string;
+      rootEnter?: 'return' | 'manage' | 'conversation';
+      hideThinkingBlock?: boolean;
+    } = {},
   ) {
     this.getProjection = getProjection;
     this.getPhase = getPhase;
@@ -607,6 +612,7 @@ export class LuminariesCommandCenterComponent implements LuminariesComponent {
     this.terminalWidth = terminalWidth;
     this.nativeUi = nativeUi;
     this.rootEnter = options.rootEnter ?? 'return';
+    this.thinkingHidden = options.hideThinkingBlock ?? false;
     const projection = getProjection();
     const initialAgent = options.initialAgentId
       ? projection.directory.find((agent) => agent.agentId === options.initialAgentId)
@@ -1135,7 +1141,7 @@ export class LuminariesCommandCenterComponent implements LuminariesComponent {
           part.id,
           part.arguments ?? {},
           undefined,
-          ui.toolDefinitions?.get(part.name),
+          ui.toolDefinitions?.get(part.name) ?? ui.fallbackToolDefinition,
           ui.tui,
           agent.cwd,
         );

@@ -146,7 +146,7 @@ async function verifyManifest(packageRoot) {
   assert.equal(manifest.version, 1);
   assert.equal(typeof manifest.buildId, 'string');
   assert.equal(manifest.buildId.length, 64);
-  const expectedPaths = ['package.json', SKILL_PATH, ...(await runtimeJavaScriptPaths(packageRoot))].sort();
+  const expectedPaths = (await runtimeJavaScriptPaths(packageRoot)).sort();
   assert.deepEqual(
     manifest.files.map((file) => file.path),
     expectedPaths,
@@ -519,6 +519,19 @@ console.log(JSON.stringify({ waves: Object.keys(waves).sort(), privateCode }));`
   await wavesManager.close();
   wavesManager = undefined;
   passed.push('authenticated child build binding and closed-target Waves refusal');
+
+  for (const path of ['package.json', SKILL_PATH]) {
+    const installedPath = join(installedRoot, path);
+    const original = await readFile(installedPath);
+    try {
+      await writeFile(installedPath, Buffer.concat([original, Buffer.from('\n')]));
+      await acceptedBuild.verify();
+      const reloaded = await acceptedBuildModule.loadAcceptedBuild();
+      assert.equal(reloaded.id, acceptedBuild.id, 'Documentation and metadata do not change runtime identity');
+    } finally {
+      await writeFile(installedPath, original);
+    }
+  }
 
   let bridgeIssueCount = 0;
   const buildAgent = { agentId: 'build-agent', lifecycle: 'open' };

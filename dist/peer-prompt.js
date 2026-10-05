@@ -11,7 +11,7 @@ function clipPresentation(value) {
 }
 export function peerSource(event, state) {
     if (event.origin === 'operator')
-        return 'Human operator';
+        return 'Luminaries';
     if (event.origin === 'service')
         return `${LUMINARIES_IDENTITY.label} service`;
     if (event.origin === 'scheduler' || event.origin === 'system')

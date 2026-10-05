@@ -33,6 +33,8 @@ const keybindings = {
       'tui.select.confirm': ['\r', '\n'],
       'tui.select.cancel': ['\x1b', '\x03'],
       'tui.editor.deleteCharBackward': ['\x7f', '\b'],
+      'app.tools.expand': ['\x0f'],
+      'app.thinking.toggle': ['\x14'],
     };
     return bindings[action]?.includes(data) === true;
   },
@@ -90,7 +92,6 @@ class NativeTool extends NativeText {
     this.expanded = expanded;
     if (this.result) this.updateResult(this.result);
   }
-  setExpanded() {}
 }
 
 class NativeExpandable extends NativeText {
@@ -538,7 +539,7 @@ test('projection separates queued delivery, intentional waiting, and live work',
     let projected = projectCommandCenter(store.snapshot()).agents.find((candidate) => candidate.agentId === 'agent-a');
     assert.equal(projected.humanState, 'idle');
     assert.equal(projected.activity, '');
-    assert.equal(projected.dependency, 'Message from Human operator is queued');
+    assert.equal(projected.dependency, 'Message from Luminaries is queued');
     assert.deepEqual(projected.interactions, []);
 
     const requestActivation = await store.startActivation('agent-a', 'request');
@@ -2078,6 +2079,95 @@ test('controller dynamically removes the idle widget and opens the stock-Pi fore
   assert.equal(mouseInput, undefined);
   assert.equal(terminalWrites.length, 0, 'the fullscreen host retains terminal mouse ownership');
   assert.equal(widget, undefined);
+});
+
+test('native Pi tool output collapses independently of the thinking preference', async (t) => {
+  const projection = projectionWith([
+    agent('root', null, 0, 'Root', 'idle'),
+    agent('child', 'root', 1, 'Expert', 'idle'),
+  ]);
+  const messages = [
+    {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'Consider the retained context.' },
+        { type: 'toolCall', id: 'shell', name: 'bash', arguments: { command: 'inspect' } },
+        { type: 'toolCall', id: 'extension', name: 'external_lookup', arguments: { query: 'inspect' } },
+      ],
+    },
+    {
+      role: 'toolResult',
+      toolCallId: 'shell',
+      toolName: 'bash',
+      isError: false,
+      content: [{ type: 'text', text: Array.from({ length: 40 }, (_, index) => `Output row ${index}`).join('\n') }],
+    },
+    {
+      role: 'toolResult',
+      toolCallId: 'extension',
+      toolName: 'external_lookup',
+      isError: false,
+      content: [{ type: 'text', text: Array.from({ length: 40 }, (_, index) => `Extension row ${index}`).join('\n') }],
+    },
+  ];
+  const controller = new LuminariesCommandCenterController();
+  t.after(() => controller.dispose());
+  const tui = nativeUi(100, 160).tui;
+  tui.addInputListener = () => () => undefined;
+  // Older Pi versions show unknown-tool output in full even when collapsed.
+  const { ToolExecutionComponent } = await import('@earendil-works/pi-coding-agent');
+  const nativeFallback = new ToolExecutionComponent(
+    'external_lookup',
+    'extension',
+    { query: 'inspect' },
+    undefined,
+    {},
+    tui,
+    process.cwd(),
+  );
+  nativeFallback.updateResult({ content: messages[2].content, details: undefined, isError: false });
+  nativeFallback.setExpanded(false);
+  const nativePreviewShowsMiddle = nativeFallback.render(100).join('\n').includes('Extension row 20');
+  controller.attach(
+    {
+      mode: 'tui',
+      hideThinkingBlock: true,
+      ui: {
+        setWidget() {},
+        async custom(factory) {
+          verify(factory(tui, theme, keybindings, () => undefined));
+        },
+      },
+    },
+    {
+      commandCenterProjection: () => projection,
+      onCommandCenterChange: () => () => undefined,
+      operatorClosedHistory: async () => ({ revision: 1, agents: [], archivedCount: 0 }),
+      onAgentConversationChange(agentId, listener) {
+        listener({ type: 'reset', epoch: 'test', agentId, incarnation: 1, revision: 1, hydrated: true, messages });
+        return () => undefined;
+      },
+    },
+  );
+  await controller.open(undefined, 'child');
+  function verify(component) {
+    const collapsed = component.render(100).join('\n');
+    assert.doesNotMatch(collapsed, /Output row 20|Consider the retained context/);
+    assert.equal(collapsed.includes('Extension row 20'), nativePreviewShowsMiddle);
+    assert.match(collapsed, /to expand/);
+    component.handleInput('\x0f');
+    const expanded = component.render(100).join('\n');
+    assert.match(expanded, /Output row 20/);
+    assert.match(expanded, /Extension row 20/);
+    assert.doesNotMatch(expanded, /Consider the retained context/);
+    component.handleInput('\x14');
+    assert.match(component.render(100).join('\n'), /Consider the retained context/);
+    component.handleInput('\x0f');
+    const recollapsed = component.render(100).join('\n');
+    assert.doesNotMatch(recollapsed, /Output row 20/);
+    assert.equal(recollapsed.includes('Extension row 20'), nativePreviewShowsMiddle);
+    assert.match(recollapsed, /Consider the retained context/);
+  }
 });
 
 test('direct closed-collaborator open fails instead of falling back when retained history is unavailable', async (t) => {
