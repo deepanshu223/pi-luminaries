@@ -21,7 +21,7 @@ To try your build in Pi:
 pi -e .
 ```
 
-The source lives in `src/`, integration tests in `test/`, and the collaboration skill in `skills/`. The tracked `dist/` build lets Pi install directly from GitHub; regenerate it when changing the source or package metadata.
+The source lives in `src/`, integration tests in `test/`, and the collaboration skill in `skills/`. The tracked `dist/` build lets Pi install directly from GitHub; regenerate it when changing the source or build configuration.
 
 Keep changes focused on the behavior a user will see. For a substantial design change, open an issue with the problem and proposed behavior before implementation.
 
@@ -64,7 +64,7 @@ Test count is not a quality target, and a code change does not automatically req
 
 ## Prettier standard
 
-Prettier is authoritative for the source, tests, configuration, and root Markdown named by the format scripts. Format documentation under `docs/` only when editing it. Do not hand-align covered code or preserve a personal wrapping style that Prettier will replace.
+Prettier is authoritative for the source, tests, configuration, root Markdown, consumer guides, capability reference, and bundled collaboration skill named by the format scripts. Other documentation is formatted only when edited. Do not hand-align covered code or preserve a personal wrapping style that Prettier will replace.
 
 The explicit project rules are:
 

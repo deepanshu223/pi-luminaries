@@ -1,6 +1,6 @@
 {
   "name": "pi-luminaries",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Your constellation of enduring experts for Pi",
   "keywords": [
@@ -41,6 +41,8 @@
   "files": [
     "README.md",
     "docs/configuration.md",
+    "docs/foundations.md",
+    "docs/reference/",
     "docs/usage.md",
     "docs/assets/*.png",
     "dist/",
@@ -50,8 +52,8 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.build.json && node scripts/build-manifest.mjs",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
-    "format:check": "prettier --check package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
+    "format": "prettier --write package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"docs/{usage,configuration,foundations}.md\" \"docs/reference/**/*.md\" \"skills/luminaries-collaboration/SKILL.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
+    "format:check": "prettier --check package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"docs/{usage,configuration,foundations}.md\" \"docs/reference/**/*.md\" \"skills/luminaries-collaboration/SKILL.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
     "pack:check": "node scripts/pack-check.mjs",
     "test": "node --test --test-concurrency=1 --test-timeout=150000 test/**/*.test.mjs",
     "check": "npm run typecheck && npm run format:check && npm test && npm run pack:check"

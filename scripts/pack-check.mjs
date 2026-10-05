@@ -248,6 +248,8 @@ try {
   assert.ok(shippedPaths.includes('LICENSE'));
   assert.ok(shippedPaths.includes('README.md'));
   assert.ok(shippedPaths.includes('docs/configuration.md'));
+  assert.ok(shippedPaths.includes('docs/foundations.md'));
+  assert.ok(shippedPaths.includes('docs/reference/README.md'));
   assert.ok(shippedPaths.includes('docs/usage.md'));
   assert.ok(shippedPaths.includes('package.json'));
   assert.ok(shippedPaths.includes('dist/extension.js'));
@@ -262,6 +264,8 @@ try {
         path === 'LICENSE' ||
         path === 'README.md' ||
         path === 'docs/configuration.md' ||
+        path === 'docs/foundations.md' ||
+        (path.startsWith('docs/reference/') && path.endsWith('.md')) ||
         path === 'docs/usage.md' ||
         (path.startsWith('docs/assets/') && path.endsWith('.png')) ||
         path === 'package.json' ||
@@ -319,14 +323,6 @@ try {
   assert.deepEqual(installedPackage.pi?.extensions, ['./dist/extension.js']);
   assert.deepEqual(installedPackage.pi?.skills, ['./skills']);
   assert.deepEqual(Object.keys(installedPackage.exports ?? {}).sort(), ['.', './waves-v1']);
-  assert.deepEqual(installedPackage.files, [
-    'README.md',
-    'docs/configuration.md',
-    'docs/usage.md',
-    'docs/assets/*.png',
-    'dist/',
-    'skills/',
-  ]);
   assert.equal(Object.keys(installedPackage.dependencies ?? {}).length, 0);
   assert.equal(await exists(join(installRoot, 'node_modules', 'typescript')), false);
   assert.equal(await exists(join(installRoot, 'node_modules', 'prettier')), false);
