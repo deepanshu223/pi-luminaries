@@ -23,7 +23,7 @@ Creation records a participant and prepares its Pi session. A spawn receipt does
 
 Recent and fork require an exact parent spawn-call snapshot. They transfer context once; later changes to the parent conversation do not appear in the child automatically.
 
-The recent budget can be chosen with `recentTokens`. The receipt reports the effective budget, estimated transfer, and omissions. Recent keeps the newest complete groups that fit; if even the newest group exceeds the budget, creation is refused rather than splitting a tool exchange. Fork is refused when the complete transfer cannot fit; the caller can compact the parent, select a larger-context model, or choose a different mode.
+The recent budget defaults to 16,000 tokens in Luminaries and can be chosen with `recentTokens`; Pi does not impose that default. Available room in the target model can reduce the effective budget. A group starts at each user-equivalent input, including a custom message Pi converts to user input, and includes the following assistant/tool exchange up to the next such input. The receipt reports the effective budget, estimated transfer, and omissions. Recent keeps the newest complete groups that fit; if even the newest group exceeds the budget, creation is refused rather than splitting a tool exchange. Fork is refused when the complete transfer cannot fit; the caller can compact the parent, select a larger-context model, or choose a different mode.
 
 Transfer sizing uses Pi's token estimate. Cross-model transfers use Pi's compatibility handling, which may normalize model-specific reasoning, tool identifiers, or media. Fresh and custom do not budget a nonexistent parent transfer.
 

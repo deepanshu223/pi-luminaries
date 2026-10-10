@@ -1,6 +1,6 @@
 ---
 name: luminaries-collaboration
-description: Coordinate a persistent constellation of expert Pi sessions through the five Pi Luminaries tools.
+description: Coordinate a persistent constellation of expert Pi sessions through Pi Luminaries tools. Use when the user asks for Luminaries or subagents, or when creating, consulting, or coordinating experts in an existing constellation.
 ---
 
 # Pi Luminaries collaboration

@@ -25,7 +25,7 @@ After settled idle work, Pi Luminaries keeps the process warm for about five min
 
 Parking retains identity, card, lineage, saved configuration, Pi session, and unresolved collaboration. It keeps the expert open and still counts toward capacity. Root itself is not automatically parked.
 
-Human **Park all collaborators** can wait for safe settlement or interrupt when the human explicitly selects that option. It releases runtimes rather than closing their identities.
+Human **Park all collaborators** can wait for safe settlement or interrupt when the human explicitly selects that option. It releases runtimes rather than closing their identities. Parking does not cancel the mailbox: pending or incoming work can wake the expert again. To stop accepting work, close the expert or its subtree; cancelling a request ends the wait without interrupting its running work.
 
 ## Closing, resuming, and archive
 
@@ -43,7 +43,15 @@ A turn that was running at shutdown may need new direction after recovery. Compl
 
 An attached terminal becomes read-only while the owner is unavailable. It cannot keep the constellation running on its own; see [Shared terminal views](shared-views.md).
 
-After updating the Luminaries runtime, exit the owning Pi process and resume the same Pi session. A fresh process loads the updated runtime together; `/reload` may retain previously imported JavaScript modules.
+For package updates, see [Restart after a package update](troubleshooting.md#restart-after-a-package-update).
+
+## Saved state and removal
+
+Each constellation is stored under `<Pi agent dir>/luminaries/roots/<rootId>/`. Pi's agent directory defaults to `~/.pi/agent`; `PI_CODING_AGENT_DIR` can select another location. Each constellation's folder contains its collaboration state in `control/` and its experts' Pi conversations in `sessions/`.
+
+To identify your constellation's folder, ask Pi to look up Root in `luminaries_directory` and show its full `agentId`. This is the `<rootId>` used in the folder path above.
+
+To remove a constellation permanently, stop its owning Pi session and delete that constellation's `<rootId>` folder. This removes its saved experts and their conversation histories. Use archive when you want to hide experts while keeping their histories.
 
 ## Failure and recovery
 
@@ -57,5 +65,7 @@ After updating the Luminaries runtime, exit the owning Pi process and resume the
 An indeterminate input is not automatically replayed as though it had never reached the model. Inspect the conversation, referenced artifacts, and diagnostic state to determine what is known. The human may be offered **Continue with a message** to provide explicit new direction; this does not prove that the earlier work succeeded.
 
 A launch or provider failure can require correcting Pi configuration or the expert's selected resources before continuation. A writer-recovery failure must be resolved before the session can resume safely.
+
+A normal resume reclaims ownership only when process checks establish that the old owner is gone. For recovery steps, see [Resolve an ownership conflict](troubleshooting.md#resolve-an-ownership-conflict).
 
 Pi remains authoritative for conversation persistence and compaction. The model's active context may contain summaries of earlier messages.

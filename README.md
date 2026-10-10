@@ -20,6 +20,10 @@ Pi Luminaries gives your Pi session a constellation of enduring experts that can
 pi install npm:pi-luminaries
 ```
 
+Minimum supported Pi version: **0.84.4**.
+
+After updating Pi Luminaries, [exit Pi and resume the same session](docs/reference/troubleshooting.md#restart-after-a-package-update) to load the new runtime.
+
 Start a Pi session in your project. For example, while evolving a notes app:
 
 ```text
@@ -81,7 +85,7 @@ Both actions create independent copies and preserve the source history. You can 
 
 The [usage guide](docs/usage.md) covers conversations, controls, changing an expert's tools, session handoffs, and additional terminals.
 
-See [Configuration](docs/configuration.md) for models, permissions, nesting limits, and defaults.
+See [Configuration](docs/configuration.md) for models, permissions, nesting limits, and defaults, or [Troubleshooting](docs/reference/troubleshooting.md) for help when something goes wrong.
 
 [Foundations](docs/foundations.md) explains how the pieces fit together. The [capability reference](docs/reference/README.md) describes their behavior in detail for you and your Pi agent.
 

@@ -35,7 +35,21 @@ Run the automated tests with:
 npm test
 ```
 
-The suite uses Node's built-in test runner and local fixtures. It needs no model credentials or paid model calls. Tests stay in the source repository and are excluded from the npm package.
+The suite uses Node's built-in test runner. `test/native/` runs real Pi processes with [Pi's faux provider](https://github.com/earendil-works/pi/blob/main/packages/ai/README.md#faux-provider-for-tests). The tests script the model's replies; Pi owns streaming, queues, tool execution, sessions, and extension loading. Focused integration tests cover interrupted writes, uncertain delivery, permissions, and transport failures. UI tests use Pi's real editors, selectors, and message components with a small terminal stub. It needs no model credentials or paid model calls. Tests stay in the source repository and are excluded from the npm package.
+
+The real-Pi scenarios cover:
+
+| Journey         | What must keep working                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Native input    | Abort, queue clearing, extension input and error reporting                                                                      |
+| Active expert   | Steering reaches the current turn; follow-up waits; interruption preserves queued work                                          |
+| Collaboration   | Nested context, custom-context isolation, cross-branch request/reply, and Root waiting for activity                             |
+| Extensions      | Approval, adding and removing tools, queued work, and recovery after an extension disappears                                    |
+| Retained expert | Two attached clients, model and thinking changes, settings, restart, park/wake, archive/resume, standalone handoff and adoption |
+
+`pack:check` repeats the retained-expert journey using the installed npm tarball. This checks that the shipped package can run an expert, beyond loading the extension.
+
+Run just the real-Pi scenarios with `npm run test:native`. To check another Pi version, set `LUMINARIES_TEST_PI` to its installed `dist/cli.js`. CI runs the full suite on Windows and Linux with the development version, plus the minimum supported Pi on Linux and the newer compatibility host on Windows. The host versions are pinned in `.github/workflows/check.yml`.
 
 For a focused change, run the relevant file:
 

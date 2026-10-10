@@ -79,7 +79,7 @@ Interrupting Root's turn leaves other experts running. Ending a request's wait, 
 
 Press `/` to search names, expertise, and published outputs. Select an expert and press `i` to read the complete card, including its model and thinking level. Open the conversation when you want to inspect the investigation behind it.
 
-Ask an expert to update its focus, expertise, or useful output references as its work develops. Root can also change a descendant's assignment, scope, or name. For manual edits, select **Actions → Edit expert card**.
+Ask an expert to update its focus, expertise, or useful output references as its work develops. Root can also edit the assignment, scope, or name shown on the card. For manual edits, select **Actions → Edit expert card**.
 
 ## Change model or thinking
 
@@ -101,7 +101,7 @@ To park the constellation's experts together, select Root, press `a`, and choose
 
 The widget highlights work in progress and experts needing attention. Open `/luminaries` to see the whole constellation.
 
-For an expert showing **Needs you**, open its card and conversation to read the explanation. If its actions offer **Continue with a message**, review what happened and tell it how to proceed. See [Lifecycle and recovery](reference/lifecycle-and-recovery.md#failure-and-recovery) for uncertain delivery and restart behavior.
+For **Needs you**, a missing extension, an unavailable owner, or work that seems stuck, use [Troubleshooting](reference/troubleshooting.md) to find the recovery steps for what you see.
 
 ## Add or remove an expert's extensions
 

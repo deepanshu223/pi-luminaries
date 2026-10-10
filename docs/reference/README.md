@@ -14,6 +14,7 @@ A **participant** is Root or any expert in its constellation.
 | When input reaches a recipient and how control differs from ordinary communication | [Messages and controls](messages-and-controls.md)           |
 | How to obtain an answer, wait for activity, cancel a wait, or handle a late reply  | [Requests and waits](requests-and-waits.md)                 |
 | What parking, closing, archiving, restart, or uncertain delivery means             | [Lifecycle and recovery](lifecycle-and-recovery.md)         |
+| How to recover from an error, missing resource, or interrupted session             | [Troubleshooting](troubleshooting.md)                       |
 | How multiple terminals interact with the same conversation                         | [Shared terminal views](shared-views.md)                    |
 | What is copied when bringing a session in or continuing it independently           | [Session handoffs](session-handoffs.md)                     |
 | How another Pi extension can use the running constellation                         | [Pi extension integration](pi-extension-integration.md)     |

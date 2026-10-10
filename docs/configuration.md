@@ -91,11 +91,11 @@ For manual creation, the same selection is available under **Customize → Advan
 
 For existing experts and new sources, follow [Add or remove an expert's extensions](usage.md#add-or-remove-an-experts-extensions). Your approval makes a source available in the current constellation. Root and owning experts can then select it for their descendants. Approving new sources remains your choice.
 
-| Value    | Behavior                                                              |
-| -------- | --------------------------------------------------------------------- |
-| `always` | Include it automatically in every new luminary.                       |
-| `allow`  | Include it when selected during creation or for an existing expert.   |
-| `deny`   | Prevent it from loading, even if the same source is allowed globally. |
+| Value    | Behavior                                                                                      |
+| -------- | --------------------------------------------------------------------------------------------- |
+| `always` | Include it in every expert when its Pi process starts, including after parking or restarting. |
+| `allow`  | Include it when selected during creation or for an existing expert.                           |
+| `deny`   | Prevent it from loading, even if the same source is allowed globally.                         |
 
 Unlisted extensions stay off. These settings apply to the experts; your main Pi session keeps its own extension configuration.
 
@@ -110,7 +110,9 @@ For the key `"./extensions/project-tools.ts"`:
 
 See [Pi package sources](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md#package-sources) for the supported source forms.
 
-The extension policy and each expert's selection are saved with the constellation across parking, wake, and Root resume.
+File settings supply the extension policy when a constellation is created. That policy and each expert's selection are then saved across parking, wake, and Root resume. For an existing constellation, use **Root settings → Extension availability** for new approvals and the expert's **Extensions** action for selections.
+
+If an extension becomes unavailable, see [Recover from a missing extension](reference/troubleshooting.md#recover-from-a-missing-extension).
 
 ## Integration access
 
