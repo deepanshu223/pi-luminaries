@@ -73,6 +73,7 @@ export interface LuminariesCommandCenterHost {
     }>;
     operatorSetArchived(agentId: string, archived: boolean, operationId?: string): Promise<void>;
     operatorResume(agentId: string, operationId?: string): Promise<void>;
+    operatorExpertCard(agentId: string): Promise<LuminariesEditableCard>;
     operatorExecute(toolName: LuminariesToolName, input: unknown, operationId?: string): Promise<LuminariesToolResult>;
     attachmentInvocation(): string;
     operatorModels(): readonly ModelDescriptor[];
@@ -83,6 +84,15 @@ export interface LuminariesCommandCenterHost {
     }[];
     operatorExtensionSources(): readonly ManagedExtensionSource[];
     operatorApproveExtension(specifier: string, scope: ManagedExtensionSource['scope'], install: boolean, operationId?: string): Promise<void>;
+}
+export interface LuminariesEditableCard {
+    displayName: string;
+    role: string;
+    focus: string;
+    assignment: string;
+    ownershipBoundary: string;
+    expertise: readonly string[];
+    publishedRefs: readonly string[];
 }
 /** Session-bound owner of the active-only widget, shared motion clock, and foreground workspace. */
 export declare class LuminariesCommandCenterController {

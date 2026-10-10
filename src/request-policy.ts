@@ -261,7 +261,10 @@ export function applyTerminalEventToRequestState(
   if (event.kind === 'reply' && request.terminalEventId === event.eventId) {
     if (
       event.consumedSeq === undefined &&
-      (event.status === 'aborted' || event.status === 'failed' || event.status === 'indeterminate')
+      (event.status === 'refused' ||
+        event.status === 'aborted' ||
+        event.status === 'failed' ||
+        event.status === 'indeterminate')
     ) {
       delete request.terminalEventId;
       return queueRequestResolution(
@@ -276,7 +279,10 @@ export function applyTerminalEventToRequestState(
   if (
     event.kind === 'request' &&
     request.terminalEventId === undefined &&
-    (event.status === 'aborted' || event.status === 'failed' || event.status === 'indeterminate')
+    (event.status === 'refused' ||
+      event.status === 'aborted' ||
+      event.status === 'failed' ||
+      event.status === 'indeterminate')
   ) {
     return queueRequestResolution(
       state,
@@ -353,7 +359,7 @@ function queueRequestResolution(
   const status = requestStatus(state, request);
   const terminalOrigin =
     cause.eventId === request.requestEventId &&
-    ((code === 'request_delivery_failed' && status === 'delivery_failed') ||
+    ((code === 'request_delivery_failed' && (status === 'delivery_failed' || status === 'refused')) ||
       (code === 'request_dispatch_indeterminate' && status === 'delivery_indeterminate'));
   if ((!terminalOrigin && status !== 'pending') || request.terminalEventId !== undefined)
     throw new SchedulerStateError(

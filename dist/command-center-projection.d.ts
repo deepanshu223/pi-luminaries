@@ -64,14 +64,15 @@ export interface LuminariesCommandCenterProjection {
         maxDepth: number;
         namePoolSource: RootSettingSource | 'configured';
         sources: {
-            maxOpenAgents: RootSettingSource | 'operator-live';
-            maxDepth: RootSettingSource | 'operator-live';
+            maxOpenAgents: RootSettingSource | 'operator-live' | 'saved-policy';
+            maxDepth: RootSettingSource | 'operator-live' | 'saved-policy';
             serviceGrant: RootSettingSource;
         };
         agentExtensions: readonly {
             specifier: string;
             state: 'always' | 'allow' | 'deny';
             source: RootSettingSource;
+            available?: boolean;
         }[];
         serviceGrant: readonly string[];
     };

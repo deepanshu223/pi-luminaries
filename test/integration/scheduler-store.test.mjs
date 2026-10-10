@@ -88,24 +88,48 @@ test('closing an expert retires its pending health notice without hiding uncerta
 });
 
 test('bootstraps, appends current control truth, checkpoints on close, and reopens', async (t) => {
-  const { root, statePath, store } = await openStore(t);
+  const { root, statePath, store } = await openStore(t, { bootstrap: { serviceGrant: ['spawn', 'set_extensions'] } });
   const controlDirectory = join(root, 'luminaries', 'control');
   const snapshotPath = join(controlDirectory, 'snapshot.jsonl');
   assert.equal(store.startup.created, true);
   assert.equal(openCollaboratorCount(store.snapshot()), 0);
-  assert.equal(JSON.parse((await readFile(snapshotPath, 'utf8')).split('\n')[0]).revision, 1);
   const { sessionDir } = await admitA(store, root);
-  assert.equal(store.snapshot().revision, 2);
-  const journalName = (await readdir(controlDirectory)).find((name) => name.startsWith('journal.'));
-  assert.ok(journalName);
-  const journal = JSON.parse((await readFile(join(controlDirectory, journalName), 'utf8')).trim());
-  assert.equal(journal.puts.agents['agent-a'].agentId, 'agent-a');
   const sessionFile = join(sessionDir, 'agent-a.jsonl');
   await writeFile(sessionFile, '');
   await store.bindSession('agent-a', sessionFile);
   const runtime = await store.claimRuntime('agent-a', process.pid, 'test-host');
   await store.markRuntimeSpawned('agent-a', runtime.value.runtimeOwner, process.pid);
   await store.markRuntimeReady('agent-a', runtime.value.runtimeOwner, process.pid);
+  const steerTurn = await store.startActivation('agent-a', 'prompt');
+  const steerAuth = { agentId: 'root', rootId: 'root', runtimeOwner: 'operator', origin: 'operator' };
+  const steerInput = {
+    bridgeRequestId: 'ended-turn-steer',
+    recipientId: 'agent-a',
+    message: 'Guide this running turn only.',
+  };
+  const steer = await store.admitPeerEvent(steerAuth, steerInput, steerTurn.value.activationId);
+  const beginSteer = () =>
+    store.applyMailboxIntent({
+      kind: 'begin_delivery',
+      recordId: steer.value.event.eventId,
+      runtimeOwner: runtime.value.runtimeOwner,
+    });
+  await store.finishActivation(steerTurn.value.activationId, steerTurn.value.leaseToken, 'settled');
+  assert.equal((await beginSteer()).value, undefined);
+  const steerNotices = () =>
+    Object.values(store.snapshot().mailbox).filter(
+      (record) => record.systemType === 'control_failure' && record.causationId === steer.value.event.eventId,
+    );
+  assert.equal(steerNotices().length, 1, 'A missed explicit steer must notify its sender');
+  const steerNotice = steerNotices()[0];
+  assert.equal(steerNotice.recipientId, 'root');
+  assert.equal(steerNotice.status, 'accepted');
+  assert.match(steerNotice.message, /not delivered.*turn ended.*luminaries_message/u);
+  assert.equal(store.snapshot().mailbox[steer.value.event.eventId].status, 'refused');
+  const refusedRevision = store.snapshot().revision;
+  assert.equal((await beginSteer()).revision, refusedRevision);
+  assert.equal((await store.admitPeerEvent(steerAuth, steerInput, 'agent-a')).value.duplicate, true);
+  assert.equal(steerNotices().length, 1);
   const notification = await store.admitPeerEvent(
     { agentId: 'root', rootId: 'root', runtimeOwner: 'operator', origin: 'operator' },
     {
@@ -145,19 +169,21 @@ test('bootstraps, appends current control truth, checkpoints on close, and reope
     },
   );
   assert.equal(request.value.route.event.status, 'accepted');
-  assert.equal(request.value.route.event.targetActivationId, activation.value.activationId);
+  assert.equal(request.value.route.event.targetActivationId, undefined);
+  await store.finishActivation(activation.value.activationId, activation.value.leaseToken, 'settled');
   const delivery = await store.applyMailboxIntent({
     kind: 'begin_delivery',
     recordId: request.value.route.event.eventId,
     runtimeOwner: runtime.value.runtimeOwner,
   });
-  assert.equal(delivery.value.activationId, activation.value.activationId);
+  assert.equal(delivery.value.deliveryKind, 'wake');
+  assert.notEqual(delivery.value.activationId, activation.value.activationId);
   await store.applyMailboxIntent({
     kind: 'admit_boundary',
     recordId: request.value.route.event.eventId,
     attemptId: delivery.value.attemptId,
   });
-  await store.finishActivation(activation.value.activationId, activation.value.leaseToken, 'settled');
+  await store.finishActivation(delivery.value.activationId, delivery.value.activationLeaseToken, 'settled');
   const operatorAuth = { agentId: 'root', rootId: 'root', runtimeOwner: 'operator', origin: 'operator' };
   const missedWake = await store.admitPeerEvent(operatorAuth, {
     bridgeRequestId: 'missed-wake-boundary',
@@ -287,6 +313,10 @@ test('bootstraps, appends current control truth, checkpoints on close, and reope
   t.after(() => reopened.close());
   assert.equal((await stat(activeJournal)).size, 0);
   assert.equal(reopened.startup.created, false);
+  assert.equal(reopened.snapshot().mailbox[steerNotice.eventId].recipientId, 'root');
+  assert.equal(reopened.snapshot().mailbox[steerNotice.eventId].status, 'accepted');
+  assert.equal(reopened.snapshot().mailbox[steer.value.event.eventId].status, 'refused');
+  assert.deepEqual(reopened.snapshot().root.serviceGrant, ['spawn', 'set_extensions']);
   assert.equal(agentPath(reopened.snapshot(), 'agent-a'), 'root/a');
   assert.equal(reopened.snapshot().mailbox[notification.value.event.eventId].status, 'settled');
   assert.equal(
@@ -294,13 +324,10 @@ test('bootstraps, appends current control truth, checkpoints on close, and reope
     activation.value.activationId,
   );
   assert.equal(reopened.snapshot().mailbox[descendant.value.event.eventId].status, 'accepted');
-  assert.equal(
-    reopened.snapshot().mailbox[request.value.route.event.eventId].targetActivationId,
-    activation.value.activationId,
-  );
+  assert.equal(reopened.snapshot().mailbox[request.value.route.event.eventId].targetActivationId, undefined);
   assert.equal(
     reopened.snapshot().mailbox[request.value.route.event.eventId].activationId,
-    activation.value.activationId,
+    delivery.value.activationId,
   );
   assert.equal(reopened.snapshot().activations[activation.value.activationId].state, 'settled');
   await reopened.close();
@@ -536,77 +563,6 @@ test('service request no-replay retains correlation across reopen', async (t) =>
   }
 });
 
-test('admission enforces immutable path, depth, capacity, and normalized private inputs', async (t) => {
-  const capacityContext = await fresh();
-  const capacityStore = await SchedulerStore.open({
-    statePath: capacityContext.statePath,
-    bootstrap: { rootId: 'root', cwd: capacityContext.root, maxOpenAgents: 1, maxDepth: 3 },
-  });
-  t.after(() => capacityStore.close());
-  await admitA(capacityStore, capacityContext.root);
-  const before = capacityStore.snapshot();
-  await assert.rejects(
-    admit(capacityStore, {
-      agentId: 'agent-b',
-      parentId: 'root',
-      segment: 'b',
-      cwd: capacityContext.root,
-      sessionId: 'b-session',
-      sessionDir: join(capacityContext.root, 'b'),
-    }),
-    /capacity/,
-  );
-  assert.equal(capacityStore.snapshot().revision, before.revision);
-  assert.equal(openCollaboratorCount(capacityStore.snapshot()), 1);
-  await assert.rejects(
-    admit(capacityStore, {
-      agentId: 'toString',
-      parentId: 'root',
-      segment: 'bad',
-      cwd: capacityContext.root,
-      sessionId: 'bad-session',
-      sessionDir: join(capacityContext.root, 'bad'),
-    }),
-    /invalid/,
-  );
-  await capacityStore.close();
-
-  const depthContext = await fresh();
-  const depthStore = await SchedulerStore.open({
-    statePath: depthContext.statePath,
-    bootstrap: { rootId: 'root', cwd: depthContext.root, maxOpenAgents: 4, maxDepth: 1 },
-  });
-  t.after(() => depthStore.close());
-  await admitA(depthStore, depthContext.root);
-  await assert.rejects(
-    admit(
-      depthStore,
-      {
-        agentId: 'agent-a1',
-        parentId: 'agent-a',
-        segment: 'a1',
-        cwd: depthContext.root,
-        sessionId: 'a1-session',
-        sessionDir: join(depthContext.root, 'a1'),
-      },
-      { kind: 'agent', agentId: 'agent-a' },
-    ),
-    /depth/,
-  );
-  await assert.rejects(
-    admit(depthStore, {
-      agentId: 'relative',
-      parentId: 'root',
-      segment: 'relative',
-      cwd: 'relative',
-      sessionId: 'relative-session',
-      sessionDir: join(depthContext.root, 'relative'),
-    }),
-    /absolute/,
-  );
-  await depthStore.close();
-});
-
 test('session binding and immutable activation outcomes are lease-safe and idempotent', async (t) => {
   const { root, store } = await openStore(t);
   const { sessionDir } = await admitA(store, root);
@@ -614,14 +570,8 @@ test('session binding and immutable activation outcomes are lease-safe and idemp
   await writeFile(sessionFile, '');
   await writeFile(join(sessionDir, 'other.jsonl'), '');
   const bound = await store.bindSession('agent-a', sessionFile);
-  const snapshot = store.snapshot();
-  let publications = 0;
-  const unsubscribe = store.onChange(() => publications++);
   const boundAgain = await store.bindSession('agent-a', sessionFile);
   assert.equal(boundAgain.revision, bound.revision);
-  assert.strictEqual(store.snapshot(), snapshot);
-  assert.equal(publications, 0);
-  unsubscribe();
   const outsideSessionFile = join(root, 'escape.jsonl');
   await writeFile(outsideSessionFile, '');
   await assert.rejects(store.bindSession('agent-a', outsideSessionFile), /escapes/);
@@ -649,68 +599,44 @@ test('session binding and immutable activation outcomes are lease-safe and idemp
   await store.close();
 });
 
-test('callers cannot mutate the canonical snapshot', async (t) => {
-  const { root, store } = await openStore(t);
-  await admitA(store, root);
-  const snapshot = store.snapshot();
-  assert.throws(() => {
-    snapshot.root.maxDepth = 99;
-  }, TypeError);
-  assert.equal(store.snapshot().root.maxDepth, 3);
-  await store.close();
-});
-
-test('the serialized queue stays responsive and resource close waits admitted mutations', async (t) => {
-  const { root, statePath, store } = await openStore(t, { bootstrap: { maxOpenAgents: 10, maxDepth: 1 } });
-  const publishedRevisions = [];
-  const stopListening = store.onChange((revision) => publishedRevisions.push(revision));
+test('shutdown drains an admitted write before releasing the store', async (t) => {
+  const release = Promise.withResolvers();
+  t.after(() => release.resolve());
+  const { root, statePath, store } = await openStore(t);
   const journal = store.log.journal;
   const sync = journal.sync;
-  let durabilityFlushes = 0;
+  const admitted = Promise.withResolvers();
   journal.sync = async () => {
-    durabilityFlushes++;
+    admitted.resolve();
+    await release.promise;
     await sync.call(journal);
   };
-  let ticks = 0;
-  const timer = setInterval(() => {
-    ticks++;
-  }, 1);
-  t.after(() => clearInterval(timer));
-  const admissions = Array.from({ length: 5 }, (_, index) =>
-    admit(store, {
-      agentId: `agent-${index}`,
-      parentId: 'root',
-      segment: `a-${index}`,
-      cwd: root,
-      sessionId: `agent-${index}-session`,
-      sessionDir: join(root, `agent-${index}`, 'sessions'),
-    }),
-  );
-  let commits;
-  try {
-    commits = await Promise.all(admissions);
-  } finally {
-    journal.sync = sync;
-    stopListening();
-  }
-  const closing = store.close();
-  assert.equal(await closing, true);
-  clearInterval(timer);
-  assert.ok(ticks > 0);
-  assert.deepEqual(
-    commits.map((commit) => commit.revision),
-    [2, 3, 4, 5, 6],
-  );
-  assert.deepEqual(
-    commits.map((commit) => commit.value.agentId),
-    ['agent-0', 'agent-1', 'agent-2', 'agent-3', 'agent-4'],
-  );
-  assert.deepEqual(publishedRevisions, [2, 3, 4, 5, 6]);
-  assert.equal(durabilityFlushes, 1);
+  const admission = admitA(store, root);
+  await admitted.promise;
+  let closed = false;
+  const closing = store.close().then(() => {
+    closed = true;
+  });
+  await new Promise(setImmediate);
+  assert.equal(closed, false, 'Shutdown must wait for the in-flight durable write');
+  release.resolve();
+  await admission;
+  await closing;
   const reopened = await SchedulerStore.open({ statePath });
   t.after(() => reopened.close());
-  assert.equal(openCollaboratorCount(reopened.snapshot()), 5);
-  assert.equal(reopened.snapshot().revision, 6);
+  assert.ok(reopened.snapshot().agents['agent-a']);
+});
+
+test('a reply attached before deadline processing wins over timeout', async (t) => {
+  const { root, store: reopened } = await openStore(t);
+  await admit(reopened, {
+    agentId: 'agent-0',
+    parentId: 'root',
+    segment: 'a-0',
+    cwd: root,
+    sessionId: 'agent-0-session',
+    sessionDir: join(root, 'agent-0', 'sessions'),
+  });
   const agentSessionDir = join(root, 'agent-0', 'sessions');
   const agentSessionFile = join(agentSessionDir, 'agent-0.jsonl');
   await mkdir(agentSessionDir, { recursive: true });

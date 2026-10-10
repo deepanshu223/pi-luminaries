@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planContextLaunch } from '../../src/context-session.ts';
 import { projectForkThroughToolCall } from '../../src/context-transfer.ts';
-import { captureSpawnCallContext } from '../../src/parent-context.ts';
 
 function messageEntry(id, parentId, role, content) {
   return {
@@ -51,38 +50,44 @@ test('fork projection stops at the exact spawn call and repairs its parallel pre
   );
 });
 
-test('spawn context includes the active Pi call before that assistant message is persisted', () => {
-  const requestId = 'pi-tool-active-call';
-  const snapshot = captureSpawnCallContext({
-    entries: [],
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'Create a child.' }], timestamp: 1 }],
-    activeAssistant: {
-      role: 'assistant',
-      content: [{ type: 'toolCall', id: requestId, name: 'luminaries_spawn', arguments: { name: 'Child' } }],
-      timestamp: 2,
-    },
-    requestId,
-  });
-
-  assert.equal(snapshot.selectedToolCallId, requestId);
-  assert.equal(snapshot.messages.at(-1).role, 'toolResult');
-});
-
-test('recent context can select a suffix from a long branch without an entry-count refusal', () => {
-  const entries = Array.from({ length: 10_001 }, (_, index) =>
-    messageEntry(`entry-${index}`, null, 'user', [{ type: 'text', text: `message-${index}` }]),
-  );
-  const plan = planContextLaunch(
+test('recent context keeps a complete suffix inside the requested budget', () => {
+  const old = messageEntry('old', null, 'user', 'old context '.repeat(500)).message;
+  const recent = [
+    messageEntry('question', 'old', 'custom', 'Inspect the latest finding.').message,
     {
-      context: 'recent',
-      contextWindow: 128_000,
-      maxOutputTokens: 128_000,
-      cwd: process.cwd(),
+      role: 'assistant',
+      timestamp: 1,
+      api: 'faux',
+      provider: 'faux',
+      model: 'test',
+      usage: {},
+      stopReason: 'toolUse',
+      content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'finding.txt' } }],
     },
-    { messages: entries.map((entry) => entry.message), selectedToolCallId: 'call-boundary' },
+    {
+      role: 'toolResult',
+      timestamp: 1,
+      toolCallId: 'read-1',
+      toolName: 'read',
+      content: [{ type: 'text', text: 'The finding.' }],
+      isError: false,
+    },
+  ];
+  recent[0].display = true;
+  recent[0].customType = 'luminaries_protocol_message';
+  const snapshot = { messages: [old, ...recent], selectedToolCallId: 'spawn' };
+  const plan = planContextLaunch(
+    { context: 'recent', contextWindow: 128_000, recentTokens: 200, cwd: process.cwd() },
+    snapshot,
   );
-  assert.ok(plan.receipt.transferredMessages > 0);
-  assert.ok(plan.receipt.omittedMessages >= 0);
+  assert.deepEqual(plan.messages, recent);
+  assert.equal(plan.receipt.omittedMessages, 1);
+  assert.ok(plan.receipt.estimatedTokens <= 200);
+  assert.throws(
+    () =>
+      planContextLaunch({ context: 'recent', contextWindow: 128_000, recentTokens: 1, cwd: process.cwd() }, snapshot),
+    /newest protocol-valid context group/,
+  );
 });
 
 test('Pi-native context budgeting counts media structurally and still refuses oversized text', () => {
@@ -90,7 +95,6 @@ test('Pi-native context budgeting counts media structurally and still refuses ov
     {
       context: 'fork',
       contextWindow: 32_000,
-      maxOutputTokens: 4_000,
       cwd: process.cwd(),
     },
     {
@@ -109,7 +113,7 @@ test('Pi-native context budgeting counts media structurally and still refuses ov
   assert.throws(
     () =>
       planContextLaunch(
-        { context: 'fork', contextWindow: 32_000, maxOutputTokens: 4_000, cwd: process.cwd() },
+        { context: 'fork', contextWindow: 32_000, cwd: process.cwd() },
         {
           messages: [messageEntry('user', null, 'user', [{ type: 'text', text: 'x'.repeat(200_000) }]).message],
           selectedToolCallId: 'call-boundary',
@@ -117,14 +121,4 @@ test('Pi-native context budgeting counts media structurally and still refuses ov
       ),
     /Fork context needs/,
   );
-});
-
-test('fork budgeting preserves fitting context without reserving maximum output', () => {
-  const configuration = { context: 'fork', contextWindow: 500_000, maxOutputTokens: 500_000, cwd: process.cwd() };
-  const snapshot = {
-    messages: [messageEntry('user', null, 'user', [{ type: 'text', text: 'Retain this conversation.' }]).message],
-    selectedToolCallId: 'call-boundary',
-  };
-  const plan = planContextLaunch(configuration, snapshot, 12_066);
-  assert.deepEqual(plan.messages, snapshot.messages);
 });

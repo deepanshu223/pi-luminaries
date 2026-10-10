@@ -46,7 +46,7 @@ export function systemEventSummary(event, participant) {
         case 'health_attention':
             return 'An expert needs attention.';
         case 'control_failure':
-            return 'An action could not be confirmed.';
+            return event.message || 'An action could not be confirmed.';
         case 'permission_decision':
             return `An action by ${participant} was refused by its permissions.`;
         case 'request_timeout':

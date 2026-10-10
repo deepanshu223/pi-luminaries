@@ -5,7 +5,7 @@ import { hasUnsafeHumanFacingControl, isLuminariesId } from "./identifiers.js";
 import { LUMINARIES_IDENTITY } from "./product-identity.js";
 export { isLuminariesId, isLowercaseSha256, isPiSessionId } from "./identifiers.js";
 const FORBIDDEN_MAP_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
-const SERVICE_PERMISSIONS = new Set([
+export const LUMINARIES_SERVICE_PERMISSIONS = [
     'spawn',
     'directory',
     'message',
@@ -20,7 +20,8 @@ const SERVICE_PERMISSIONS = new Set([
     'set_thinking',
     'set_extensions',
     'set_grants',
-]);
+];
+const SERVICE_PERMISSIONS = new Set(LUMINARIES_SERVICE_PERMISSIONS);
 const PEER_EVENT_STATUSES = new Set([
     'accepted',
     'sending',
@@ -234,7 +235,10 @@ export function canContinuePastIndeterminate(state, agentId, additionalRecords =
     if (!agent || agent.lifecycle !== 'open' || agent.pendingConfiguration)
         return false;
     const activationId = indeterminateContinuationActivationId(state, agentId);
-    if (agent.attention && !activationId)
+    const reconciledRuntime = agent.attention?.kind === 'needs_attention' &&
+        agent.attention.code === 'runtime_stale_reconciled' &&
+        !agent.runtimeOwner;
+    if (agent.attention && !activationId && !reconciledRuntime)
         return false;
     const boundary = agent.continuedAfterSeq ?? 0;
     const evidence = [...Object.values(state.mailbox), ...additionalRecords].filter((record) => isContinuableIndeterminateEvidence(record, agentId, boundary, activationId));
@@ -540,7 +544,7 @@ export function discardActivationBeforeWriteState(state, activationId, leaseToke
     if (activation.state !== 'running')
         return { changed: false, value: activation };
     const consumed = peerMailboxRecords(state).some((event) => event.activationId === activationId && event.consumedSeq !== undefined);
-    if (consumed)
+    if (consumed || activation.nativeInputSeq !== undefined)
         throw new SchedulerStateError('activation_transition', `Activation '${activationId}' crossed a model boundary and cannot be discarded`);
     delete state.activations[activationId];
     nextSequence(state);

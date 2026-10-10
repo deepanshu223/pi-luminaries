@@ -1,6 +1,14 @@
 import { SchedulerStateError, exactKeys, isRecord, sha256 } from "./scheduler-state.js";
 import { LUMINARIES_IDENTITY } from "./product-identity.js";
 export const PUBLIC_RESULT_BYTES = 48 * 1024;
+export function receiptWireBytes(toolCallId, message, details, terminate = false) {
+    return (Buffer.byteLength(JSON.stringify({
+        v: 1,
+        ok: true,
+        toolCallId,
+        result: { message, details, ...(terminate ? { terminate: true } : {}) },
+    })) + 1);
+}
 function cursorError() {
     return new SchedulerStateError('cursor_invalid', `This ${LUMINARIES_IDENTITY.label} page cursor is invalid or stale. Request a fresh page without the cursor.`);
 }
@@ -79,14 +87,7 @@ export function buildBytePage(options) {
         if (measuredBytes <= PUBLIC_RESULT_BYTES || count === 0) {
             if (count === 0 && (remaining > 0 || measuredBytes > PUBLIC_RESULT_BYTES))
                 throw new SchedulerStateError('result_bound', `The ${String(options.scope.view)} view cannot fit its first item within ${PUBLIC_RESULT_BYTES} bytes. Retry with a narrower view or fresh page.`);
-            return {
-                items: pageItems,
-                ...(nextCursor ? { nextCursor } : {}),
-                remaining,
-                returned: count,
-                requestedLimit: options.requestedLimit,
-                measuredBytes,
-            };
+            return details;
         }
     }
     throw new SchedulerStateError('result_bound', `The ${String(options.scope.view)} page cannot fit its measured bound.`);

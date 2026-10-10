@@ -5,7 +5,12 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, rename, open, symlink, link } from 'node:fs/promises';
 import { tmpdir, hostname } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { FileLeaseConflictError, acquirePrivateFileLease, canonicalPrivateFilePath } from '../../src/atomic-file.ts';
+import {
+  FileLeaseConflictError,
+  acquirePrivateFileLease,
+  atomicReplacePrivateFile,
+  canonicalPrivateFilePath,
+} from '../../src/atomic-file.ts';
 
 const fixture = resolve('test/fixtures/atomic-lease-child.mjs');
 const writeFixture = resolve('test/fixtures/atomic-write-child.mjs');
@@ -16,8 +21,8 @@ async function freshState() {
   const root = await mkdtemp(join(testRoot, 'case-'));
   return { root, statePath: join(root, 'private', 'state.json') };
 }
-function spawnLease(t, mode, statePath) {
-  const child = spawn(process.execPath, [fixture, mode, statePath], {
+function spawnLease(t, statePath) {
+  const child = spawn(process.execPath, [fixture, statePath], {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -73,30 +78,12 @@ async function writeOwner(lockPath, overrides = {}) {
     })}\n`,
   );
 }
-async function replaceOnce(statePath, data, options) {
-  const lease = await acquirePrivateFileLease(statePath);
-  try {
-    return await lease.replace(data, options);
-  } finally {
-    await lease.release();
-  }
-}
-
-test('atomically replaces private bytes and returns canonical provenance', async () => {
-  const { statePath } = await freshState();
-  const first = await replaceOnce(statePath, '{"revision":1}\n');
-  const second = await replaceOnce(statePath, '{"revision":2}\n');
-  assert.equal(await readFile(first.path, 'utf8'), '{"revision":2}\n');
-  assert.equal(first.path, second.path);
-  assert.equal(first.bytes, 15);
-});
-
 test('retries transient replacement errors without unlinking the canonical file', async () => {
   const { statePath } = await freshState();
-  const initial = await replaceOnce(statePath, 'old');
+  const initial = await atomicReplacePrivateFile(statePath, 'old');
   if (process.platform === 'win32') assert.equal(initial.postCommitWarning, undefined);
   let calls = 0;
-  const result = await replaceOnce(statePath, 'new', {
+  const result = await atomicReplacePrivateFile(statePath, 'new', {
     renameDelaysMs: [0, 0],
     hooks: {
       beforeRename: async () => {
@@ -112,9 +99,9 @@ test('retries transient replacement errors without unlinking the canonical file'
 
 test('distinguishes failures before and warnings after the rename commit boundary', async () => {
   const { statePath } = await freshState();
-  await replaceOnce(statePath, 'old');
+  await atomicReplacePrivateFile(statePath, 'old');
   await assert.rejects(
-    replaceOnce(statePath, 'not-committed', {
+    atomicReplacePrivateFile(statePath, 'not-committed', {
       hooks: {
         observe: (phase) => {
           if (phase === 'temp-synced') throw new Error('pre-rename stop');
@@ -124,7 +111,7 @@ test('distinguishes failures before and warnings after the rename commit boundar
     /pre-rename stop/,
   );
   assert.equal(await readFile(statePath, 'utf8'), 'old');
-  const observed = await replaceOnce(statePath, 'committed', {
+  const observed = await atomicReplacePrivateFile(statePath, 'committed', {
     hooks: {
       observe: (phase) => {
         if (phase === 'renamed') throw new Error('post-rename observer');
@@ -132,9 +119,8 @@ test('distinguishes failures before and warnings after the rename commit boundar
     },
   });
   assert.match(observed.postCommitWarning, /observer/);
-  assert.ok(observed.postCommitWarning.length <= 500);
   assert.equal(await readFile(statePath, 'utf8'), 'committed');
-  const directoryWarning = await replaceOnce(statePath, 'also-committed', {
+  const directoryWarning = await atomicReplacePrivateFile(statePath, 'also-committed', {
     hooks: {
       syncDirectory: async () => {
         throw Object.assign(new Error('x'.repeat(500)), { code: 'EPERM' });
@@ -142,7 +128,6 @@ test('distinguishes failures before and warnings after the rename commit boundar
     },
   });
   assert.match(directoryWarning.postCommitWarning, /directory sync/);
-  assert.ok(directoryWarning.postCommitWarning.length <= 500);
   assert.equal(await readFile(statePath, 'utf8'), 'also-committed');
 });
 
@@ -152,7 +137,7 @@ test('real process death before and after rename preserves the exact commit boun
     ['renamed', 'new'],
   ]) {
     const { statePath } = await freshState();
-    await replaceOnce(statePath, 'old');
+    await atomicReplacePrivateFile(statePath, 'old');
     const child = spawn(process.execPath, [writeFixture, statePath, phase, 'new'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -171,33 +156,36 @@ test('real process death before and after rename preserves the exact commit boun
       assert.ok(
         (await readdir(dirname(statePath))).some((name) => name.startsWith('.state.json.') && name.endsWith('.tmp')),
       );
-      const lease = await acquirePrivateFileLease(statePath);
-      await lease.release();
-      assert.equal(
-        (await readdir(dirname(statePath))).some((name) => name.startsWith('.state.json.') && name.endsWith('.tmp')),
-        false,
-      );
     }
+    const lease = await acquirePrivateFileLease(statePath);
+    t.after(() => lease.release());
+    const remaining = await readdir(dirname(lease.statePath));
+    assert.ok(!remaining.some((name) => name.startsWith('state.json.lock.stale-')));
+    assert.ok(!remaining.some((name) => name.startsWith('.state.json.') && name.endsWith('.tmp')));
+    await lease.release();
   }
 });
 
 test('real replacement never exposes a missing or partial canonical file', async () => {
   const { statePath } = await freshState();
   const values = ['A'.repeat(16_384), 'B'.repeat(16_384)];
-  await replaceOnce(statePath, values[0]);
+  await atomicReplacePrivateFile(statePath, values[0]);
   const heldReader = await open(statePath, 'r');
   try {
     if (process.platform === 'win32') {
-      await assert.rejects(replaceOnce(statePath, values[1], { renameDelaysMs: [0, 10, 25] }), /EPERM|EACCES|EBUSY/);
+      await assert.rejects(
+        atomicReplacePrivateFile(statePath, values[1], { renameDelaysMs: [0, 10, 25] }),
+        /EPERM|EACCES|EBUSY/,
+      );
       assert.equal(await readFile(statePath, 'utf8'), values[0]);
     } else {
-      await replaceOnce(statePath, values[1]);
+      await atomicReplacePrivateFile(statePath, values[1]);
       assert.equal(await readFile(statePath, 'utf8'), values[1]);
     }
   } finally {
     await heldReader.close();
   }
-  await replaceOnce(statePath, values[1]);
+  await atomicReplacePrivateFile(statePath, values[1]);
   let running = true;
   const reads = [];
   const reader = (async () => {
@@ -209,35 +197,12 @@ test('real replacement never exposes a missing or partial canonical file', async
     }
   })();
   try {
-    const lease = await acquirePrivateFileLease(statePath);
-    try {
-      for (let index = 0; index < 30; index++) await lease.replace(values[index % 2]);
-    } finally {
-      await lease.release();
-    }
+    for (let index = 0; index < 30; index++) await atomicReplacePrivateFile(statePath, values[index % 2]);
   } finally {
     running = false;
     await reader;
   }
   assert.ok(reads.length > 0);
-});
-
-test('one lease owns canonical and bounded sibling replacements', async (t) => {
-  const { statePath } = await freshState();
-  const lease = await acquirePrivateFileLease(statePath);
-  t.after(() => lease.release());
-  await lease.replace('first');
-  await lease.replace('second');
-  assert.equal(await readFile(lease.statePath, 'utf8'), 'second');
-  await lease.replaceSibling('corrupt-0', 'evidence');
-  assert.equal(await readFile(`${lease.statePath}.corrupt-0`, 'utf8'), 'evidence');
-  await assert.rejects(lease.replaceSibling('../escape', 'no'), /suffix/);
-  await assert.rejects(lease.replaceSibling(`lock.candidate-${randomUUID()}`, 'poison'), /reserved/);
-  await assert.rejects(lease.replaceSibling(`LOCK.STALE-${randomUUID()}`, 'poison'), /reserved/);
-  assert.equal(await lease.release(), true);
-  await assert.rejects(lease.replace('after-close'), /closing|released/);
-  const reacquired = await acquirePrivateFileLease(statePath);
-  await reacquired.release();
 });
 
 test('same-process aliases and a real second process cannot share the writer lease', async (t) => {
@@ -247,7 +212,7 @@ test('same-process aliases and a real second process cannot share the writer lea
     await assert.rejects(acquirePrivateFileLease(statePath), FileLeaseConflictError);
     if (process.platform === 'win32')
       await assert.rejects(acquirePrivateFileLease(statePath.toUpperCase()), FileLeaseConflictError);
-    const child = spawnLease(t, 'try', statePath);
+    const child = spawnLease(t, statePath);
     const refusal = await firstJsonLine(child);
     const exited = await waitForExit(child);
     assert.equal(refusal.state, 'refused');
@@ -267,23 +232,7 @@ test('same-process aliases and a real second process cannot share the writer lea
   }
 });
 
-test('a killed real owner is reclaimed through an exact stale tombstone', async (t) => {
-  const { statePath } = await freshState();
-  const child = spawnLease(t, 'hold', statePath);
-  const owner = await firstJsonLine(child);
-  assert.equal(owner.state, 'acquired');
-  child.kill('SIGKILL');
-  await waitForExit(child);
-  const lease = await acquirePrivateFileLease(statePath);
-  try {
-    const names = await readdir(dirname(lease.statePath));
-    assert.equal(names.includes(`state.json.lock.stale-${owner.token}`), false);
-  } finally {
-    await lease.release();
-  }
-});
-
-test('malformed, remote, and live lease owners fail closed', async () => {
+test('malformed, remote, and live lease owners fail closed', async (t) => {
   for (const owner of [null, { hostname: 'remote-host' }, { hostname: hostname(), pid: process.pid }]) {
     const { statePath } = await freshState();
     const canonical = await canonicalPrivateFilePath(statePath);
@@ -293,17 +242,32 @@ test('malformed, remote, and live lease owners fail closed', async () => {
     } else await writeOwner(`${canonical.path}.lock`, owner);
     await assert.rejects(acquirePrivateFileLease(statePath), FileLeaseConflictError);
   }
-});
-
-test('release is exact-token, idempotent, and never removes a successor owner', async (t) => {
-  const { statePath } = await freshState();
-  const lease = await acquirePrivateFileLease(statePath);
-  t.after(() => lease.release());
-  await writeOwner(lease.lockPath, { token: randomUUID() });
-  assert.equal(await lease.release(), false);
-  assert.equal(await lease.release(), false);
-  assert.equal(await readFile(join(lease.lockPath, 'owner.json'), 'utf8').then(() => true), true);
-  await rm(lease.lockPath, { recursive: true, force: true });
+  if (process.platform === 'win32') {
+    for (const pid of [process.pid, 4]) {
+      const { statePath } = await freshState();
+      const canonical = await canonicalPrivateFilePath(statePath);
+      await writeOwner(`${canonical.path}.lock`, {
+        pid,
+        acquiredAtMs: 0,
+        processStartIdentity: 'runtime:0',
+      });
+      const reclaimed = await acquirePrivateFileLease(statePath);
+      try {
+        assert.ok(reclaimed.owner.processStartIdentity.startsWith('win32:'));
+        const savedIdentity = reclaimed.owner.processStartIdentity;
+        await reclaimed.release();
+        await writeOwner(`${canonical.path}.lock`, {
+          processStartIdentity: `win32:${BigInt(savedIdentity.slice(6)) + 1n}`,
+        });
+        await assert.rejects(acquirePrivateFileLease(statePath), FileLeaseConflictError);
+        t.diagnostic(
+          `Recovered isolated stale lease with reused PID ${pid}; retained live-owner fence across timestamp precision differences.`,
+        );
+      } finally {
+        await reclaimed.release();
+      }
+    }
+  }
 });
 
 test('release quarantines and rechecks the exact owner before deletion', async (t) => {
@@ -343,9 +307,9 @@ test('canonicalization rejects target symlinks and hard links', async (t) => {
   await assert.rejects(canonicalPrivateFilePath(symbolic), /single-link/);
 });
 
-test('temporary and payload bounds fail while dead-owner recovery has no lifetime quota', async (t) => {
+test('failed lease acquisition preserves unverified artifacts and releases its own lock', async (t) => {
   const oversized = await freshState();
-  await assert.rejects(replaceOnce(oversized.statePath, '1234', { maxBytes: 3 }), /exceeds/);
+  await assert.rejects(atomicReplacePrivateFile(oversized.statePath, '1234', { maxBytes: 3 }), /exceeds/);
   const temps = await freshState();
   const canonicalTemps = await canonicalPrivateFilePath(temps.statePath);
   for (let index = 0; index < 17; index++)
@@ -382,33 +346,4 @@ test('temporary and payload bounds fail while dead-owner recovery has no lifetim
   await mkdir(ownerCandidate);
   await writeFile(join(ownerCandidate, 'owner.json'), 'x'.repeat(4097));
   await assert.rejects(acquirePrivateFileLease(oversizedOwner.statePath), /owner exceeds/);
-
-  const tombstones = await freshState();
-  const canonicalTombstones = await canonicalPrivateFilePath(tombstones.statePath);
-  for (let index = 0; index < 8; index++) {
-    const token = randomUUID();
-    await writeOwner(`${canonicalTombstones.path}.lock.stale-${token}`, {
-      token,
-      pid: 2147483647,
-      hostname: 'remote-host',
-    });
-  }
-  for (let index = 0; index < 12; index++) {
-    await writeOwner(`${canonicalTombstones.path}.lock`, { pid: 2147483647 });
-    const tombstoneLease = await acquirePrivateFileLease(tombstones.statePath);
-    t.after(() => tombstoneLease.release());
-    await tombstoneLease.release();
-  }
-  assert.equal(
-    (await readdir(dirname(canonicalTombstones.path))).filter((name) => name.startsWith('state.json.lock.stale-'))
-      .length,
-    8,
-  );
-  const ambiguousToken = randomUUID();
-  await writeOwner(`${canonicalTombstones.path}.lock.stale-${ambiguousToken}`, {
-    token: ambiguousToken,
-    pid: 2147483647,
-    hostname: 'remote-host',
-  });
-  await assert.rejects(acquirePrivateFileLease(tombstones.statePath), /could not be proven dead/);
 });

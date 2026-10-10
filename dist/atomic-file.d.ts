@@ -34,8 +34,6 @@ export interface PrivateFileLease {
     readonly statePath: string;
     readonly lockPath: string;
     readonly owner: FileLeaseOwner;
-    replace(data: AtomicWriteData, options?: AtomicWriteOptions): Promise<AtomicWriteResult>;
-    replaceSibling(suffix: string, data: AtomicWriteData, options?: AtomicWriteOptions): Promise<AtomicWriteResult>;
     release(): Promise<boolean>;
 }
 export declare class FileLeaseConflictError extends Error {

@@ -1,6 +1,7 @@
+import { convertToLlm } from '@earendil-works/pi-coding-agent';
 import { isRecord } from './scheduler-state.ts';
 import type { ContextMode, EffectiveSpawnConfiguration } from './spawn-configuration.ts';
-import { estimatePiSessionMessages } from './pi-session-host.ts';
+import { estimatePiSessionMessages, isPiSessionMessage } from './pi-session-host.ts';
 
 const DEFAULT_RECENT_TOKENS = 16_000;
 
@@ -33,8 +34,8 @@ function groups(messages: readonly unknown[]): readonly (readonly unknown[])[] {
   const result: unknown[][] = [];
   let current: unknown[] = [];
   for (const message of messages) {
-    const role = isRecord(message) && typeof message.role === 'string' ? message.role : undefined;
-    if (role === 'user' && current.length) {
+    const startsTurn = isPiSessionMessage(message) && convertToLlm([message]).some((part) => part.role === 'user');
+    if (startsTurn && current.length) {
       result.push(current);
       current = [];
     }

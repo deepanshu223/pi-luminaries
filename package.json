@@ -7,6 +7,8 @@
     "pi-package",
     "pi",
     "agents",
+    "subagent",
+    "subagents",
     "multi-agent",
     "collaboration"
   ],
@@ -56,14 +58,15 @@
     "format:check": "prettier --check package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"docs/{usage,configuration,foundations}.md\" \"docs/reference/**/*.md\" \"skills/luminaries-collaboration/SKILL.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
     "pack:check": "node scripts/pack-check.mjs",
     "test": "node --test --test-concurrency=1 --test-timeout=150000 test/**/*.test.mjs",
+    "test:native": "node --test --test-concurrency=1 --test-timeout=150000 test/native/*.test.mjs",
     "check": "npm run typecheck && npm run format:check && npm test && npm run pack:check"
   },
   "engines": {
     "node": ">=22.19.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.84.1 <2.0.0",
-    "@earendil-works/pi-tui": ">=0.84.1 <2.0.0"
+    "@earendil-works/pi-coding-agent": ">=0.84.4 <2.0.0",
+    "@earendil-works/pi-tui": ">=0.84.4 <2.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.0.0",

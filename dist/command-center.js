@@ -886,7 +886,7 @@ export class LuminariesCommandCenterController {
                 depthChoice,
                 extensionChoice,
                 `Automatic names · ${configuration.namePoolSource}`,
-                ...configuration.agentExtensions.map((entry) => `${entry.specifier} · ${entry.state} · ${entry.source}`),
+                ...configuration.agentExtensions.map((entry) => `${entry.specifier} · ${entry.state}${entry.available === false ? ' · unavailable' : ''} · ${entry.source}`),
                 `Waves grant · ${configuration.serviceGrant.join(', ') || 'none'} · ${configuration.sources.serviceGrant}`,
                 'Back',
             ]);
@@ -911,19 +911,22 @@ export class LuminariesCommandCenterController {
             ]);
             if (!field)
                 return undefined;
+            const card = await manager.operatorExpertCard(agentId);
+            if (!this.isCurrent(manager, generation))
+                return undefined;
             const current = field === 'Display name'
-                ? agent.name
+                ? card.displayName
                 : field === 'Role'
-                    ? (agent.role ?? '')
+                    ? card.role
                     : field === 'Focus'
-                        ? (agent.focus ?? '')
+                        ? card.focus
                         : field === 'Assignment'
-                            ? agent.assignment
+                            ? card.assignment
                             : field === 'Scope of work'
-                                ? agent.ownershipBoundary
+                                ? card.ownershipBoundary
                                 : field === 'Expertise'
-                                    ? agent.expertise.join(', ')
-                                    : agent.artifacts.join(', ');
+                                    ? card.expertise.join('\n')
+                                    : card.publishedRefs.join('\n');
             const optional = field === 'Role' || field === 'Focus' || field === 'Expertise' || field === 'Published outputs';
             const edit = optional
                 ? await this.dialogSelect(manager, generation, `${agent.handle} · ${field}`, [
@@ -946,13 +949,17 @@ export class LuminariesCommandCenterController {
                                 : { publishedRefs: null };
             }
             else {
-                const multiline = field === 'Focus' || field === 'Assignment' || field === 'Scope of work';
+                const multiline = field !== 'Display name' && field !== 'Role';
                 const raw = multiline
-                    ? await this.dialogEditor(manager, generation, `${agent.handle} · ${field}`, field === 'Scope of work'
-                        ? 'Describe the files, area, or decision this expert is responsible for.'
-                        : 'Edit the current text. Enter submits; Esc cancels.', current)
+                    ? await this.dialogEditor(manager, generation, `${agent.handle} · ${field}`, field === 'Expertise' || field === 'Published outputs'
+                        ? 'One item per line.'
+                        : field === 'Scope of work'
+                            ? 'Describe the files, area, or decision this expert is responsible for.'
+                            : 'Edit the current text. Enter submits; Esc cancels.', current)
                     : await this.dialogInput(manager, generation, `${agent.handle} · ${field}`, current ? `Current: ${current}` : 'Enter the new value.');
                 if (raw === undefined)
+                    return undefined;
+                if (raw === current)
                     return undefined;
                 const value = raw.trim();
                 if (!value && field !== 'Expertise' && field !== 'Published outputs')
@@ -971,13 +978,13 @@ export class LuminariesCommandCenterController {
                                         : field === 'Expertise'
                                             ? {
                                                 expertise: value
-                                                    .split(',')
+                                                    .split('\n')
                                                     .map((item) => item.trim())
                                                     .filter(Boolean),
                                             }
                                             : {
                                                 publishedRefs: value
-                                                    .split(',')
+                                                    .split('\n')
                                                     .map((item) => item.trim())
                                                     .filter(Boolean),
                                             };
@@ -1231,7 +1238,10 @@ export class LuminariesCommandCenterController {
     async changeExtensions(manager, generation, agent) {
         if (agent.extensionChangePending)
             return { tone: 'muted', persistent: true, text: `${agent.handle} already has an extension change pending.` };
-        const available = manager.operatorSelectableExtensions();
+        const available = [...manager.operatorSelectableExtensions()];
+        for (const specifier of agent.selectedExtensions)
+            if (!available.some((entry) => entry.specifier === specifier))
+                available.push({ specifier, source: 'unavailable' });
         if (!available.length)
             return {
                 tone: 'muted',
@@ -1255,7 +1265,7 @@ export class LuminariesCommandCenterController {
                 throw new Error('The selected extension is no longer available');
             if (selected.has(extension.specifier))
                 selected.delete(extension.specifier);
-            else
+            else if (extension.source !== 'unavailable')
                 selected.add(extension.specifier);
         }
         if (!this.isCurrent(manager, generation))

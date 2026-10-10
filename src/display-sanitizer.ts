@@ -208,28 +208,31 @@ function secretAssignment(value: string, index: number): { start: number; end: n
 export function scrubDisplaySecrets(value: string): string {
   let result = '';
   let index = 0;
+  let copied = 0;
   while (index < value.length) {
     const assignment = secretAssignment(value, index);
     if (assignment) {
-      result += value.slice(index, assignment.start);
+      result += value.slice(copied, assignment.start);
       result += '[secret]';
       index = assignment.end;
+      copied = index;
       continue;
     }
-    const bearer = value.slice(index, index + 7).toLowerCase() === 'bearer ';
+    const bearer =
+      (value[index] === 'b' || value[index] === 'B') && value.slice(index, index + 7).toLowerCase() === 'bearer ';
     if (bearer && !isWordCharacter(value[index - 1] ?? '')) {
       let end = index + 7;
       while (end < value.length && value[end]?.trim() !== '' && value[end] !== '"' && value[end] !== "'") end++;
       if (end > index + 7) {
-        result += 'Bearer [secret]';
+        result += value.slice(copied, index) + 'Bearer [secret]';
         index = end;
+        copied = index;
         continue;
       }
     }
-    result += value[index] ?? '';
     index++;
   }
-  return result;
+  return result + value.slice(copied);
 }
 
 /** Preserve ordinary Unicode, line breaks, and tabs while neutralizing terminal-shaping controls. */

@@ -3,7 +3,6 @@ import type { ParentContextSnapshot } from './context-session.ts';
 export declare function captureSpawnCallContext(options: {
     entries: readonly unknown[];
     messages?: readonly unknown[];
-    activeAssistant?: unknown;
     mode?: 'recent' | 'fork';
     requestId: string;
     toolCallId?: string;
@@ -11,9 +10,6 @@ export declare function captureSpawnCallContext(options: {
 }): ParentContextSnapshot;
 export declare function appendSpawnCallContext(messages: readonly unknown[], call: ParentContextSnapshot): readonly unknown[];
 export declare class ParentContextTracker {
-    private assistant?;
-    observe(event: unknown): void;
-    clear(): void;
     current(sessionManager: ExtensionContext['sessionManager']): ParentContextSnapshot;
     snapshot(mode: 'recent' | 'fork', requestId: string, toolCallId: string | undefined, sessionManager: ExtensionContext['sessionManager']): ParentContextSnapshot;
     boundary(mode: 'recent' | 'fork', requestId: string, toolCallId: string | undefined, sessionManager: ExtensionContext['sessionManager']): ParentContextSnapshot;

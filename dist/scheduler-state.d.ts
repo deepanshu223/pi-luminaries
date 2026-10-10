@@ -1,5 +1,6 @@
 import { type CapabilityEnvelope, type CapabilityRequest } from './capability-policy.ts';
 export { isLuminariesId, isLowercaseSha256, isPiSessionId } from './identifiers.ts';
+export declare const LUMINARIES_SERVICE_PERMISSIONS: readonly ["spawn", "directory", "message", "watch", "steer", "follow_up", "interrupt", "close", "close_subtree", "resume", "set_model", "set_thinking", "set_extensions", "set_grants"];
 export declare const DIRECT_CONTROL_STATES: Set<string>;
 export declare const TERMINAL_DIRECT_CONTROL_STATES: Set<string>;
 export declare const TERMINAL_PEER_EVENT_STATUSES: Set<string>;
@@ -29,7 +30,7 @@ export interface AgentLaunchRecord {
     themes: string[];
 }
 export type ManagedExtensionState = 'always' | 'allow' | 'deny';
-export type LuminariesServicePermission = 'spawn' | 'directory' | 'message' | 'watch' | 'steer' | 'follow_up' | 'interrupt' | 'close' | 'close_subtree' | 'resume' | 'set_model' | 'set_thinking' | 'set_extensions' | 'set_grants';
+export type LuminariesServicePermission = (typeof LUMINARIES_SERVICE_PERMISSIONS)[number];
 export type ActivationState = 'running' | 'settled' | 'aborted' | 'failed' | 'indeterminate';
 export type PeerEventOrigin = 'agent' | 'operator' | 'service' | 'scheduler' | 'system';
 export type MailboxLane = 'direct' | 'peer' | 'operator' | 'service' | 'system';
@@ -143,6 +144,7 @@ export interface ActivationRecord {
     state: ActivationState;
     inputKind: string;
     startedSeq: number;
+    nativeInputSeq?: number;
     terminalSeq?: number;
 }
 export interface PeerEventRecord {

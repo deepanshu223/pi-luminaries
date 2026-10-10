@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4be6bfb8d3b5360ace04bbc5ffe7819f956a67b308602417a9b5259ea6145039",
+  "buildId": "ad2f4f10dfed402cc3020b098126e30f1044fb0e88dc6789b76889068ac4aa0c",
   "files": [
     {
       "path": "dist/accepted-build.js",
@@ -12,7 +12,7 @@
     },
     {
       "path": "dist/actor-runtime.js",
-      "sha256": "c670990e604d83527702d61c447cdf55b0cd23f8068ea38861a03fef389fa2c8"
+      "sha256": "1710328d031e831496292bfa8ab5c288f018e7522b050653f7cae32064b659f3"
     },
     {
       "path": "dist/agent-conversations.js",
@@ -32,11 +32,11 @@
     },
     {
       "path": "dist/atomic-file.js",
-      "sha256": "093dc8b1b8ac836e39fc7ad07a00d6832c23915a78c78d3c3634ec10812a9a86"
+      "sha256": "b61ee4174cb197a0531684543608f96041e4b9185b788d908908c9436fc0fe26"
     },
     {
       "path": "dist/attachment.js",
-      "sha256": "d85819b0b5d75a4ff72d6c2d7c1e97cbd8f0da736fdc79ab835635bc84359823"
+      "sha256": "4b095e018df316473b1343cedb15386a7471877e2e3a61a4874946036615f8cb"
     },
     {
       "path": "dist/bounded-response.js",
@@ -48,7 +48,7 @@
     },
     {
       "path": "dist/causal-policy.js",
-      "sha256": "2abb93aebb84aaf3e4e93cdfaa07ed9476d9e8dc8a11e7a207fd771552c3bacd"
+      "sha256": "25f79f05938a0271356b33431d9c0e01ceb41439d573a6a78deca5762259741d"
     },
     {
       "path": "dist/child-input.js",
@@ -60,15 +60,15 @@
     },
     {
       "path": "dist/command-center-projection.js",
-      "sha256": "9cd40e0595ef8c42054d7d10b698915850d9f50c93bdf63dea24ba8ff7a12bd4"
+      "sha256": "619ff811943ed0756c25bd30de794bf7aef9b9011e639dfe14df21f29b1857c1"
     },
     {
       "path": "dist/command-center-view.js",
-      "sha256": "1827a64a19e925f0970fde264c6c66a004676602a859f9a8345f1b373819c2eb"
+      "sha256": "88583a5ba5e28db628e796452032bba4b22d7c919770b6980459a0bd84790252"
     },
     {
       "path": "dist/command-center.js",
-      "sha256": "a65123907fe22f3853b4993c1671429e2e8ebbd73f967fcd4c4ef69cdeebcb58"
+      "sha256": "603dc7c48034b398791c0fedf519d33cf741520e22c77f85efe09569c21ff09d"
     },
     {
       "path": "dist/completion-policy.js",
@@ -84,7 +84,7 @@
     },
     {
       "path": "dist/context-session.js",
-      "sha256": "8ef0b109707f69b64eb89e47801a1db295f3b8f4b9b207f1bc19062a6c3ad841"
+      "sha256": "2bab73448011189cfc699766b1129c91faa2263db66c96ad1e20f1f00290defc"
     },
     {
       "path": "dist/context-transfer.js",
@@ -99,12 +99,16 @@
       "sha256": "e3282c42f0fd5a3437de9cb02af9c4086083dc92fbd8bf9536ea7a985204e16a"
     },
     {
+      "path": "dist/directory-response.js",
+      "sha256": "aa68d75263794b3a61d431861b6d5a0c0f3351e79fa0af61100eef529c4f0c91"
+    },
+    {
       "path": "dist/display-sanitizer.js",
-      "sha256": "021f600a4fbdacfab4a08aa88f56ced59c3382d4973547ca24ef21787b5e6db1"
+      "sha256": "a6d1734af053039c00f5e02bdd1edf35c85a5f63ae5ac338f82b398ba20d169b"
     },
     {
       "path": "dist/extension.js",
-      "sha256": "c2fe5d531441b54c86e020a3d3ac5a648925af6d001e1753cf4d907e491edbab"
+      "sha256": "57127d80a60bbfd31f91c3f894840e77c94933ba6afd948bb0c9f356ffab6444"
     },
     {
       "path": "dist/health-policy.js",
@@ -116,7 +120,7 @@
     },
     {
       "path": "dist/jsonl.js",
-      "sha256": "58d3c990a457fac220980085cb24e109a3c31659c45fc3901870a6b4d4de746a"
+      "sha256": "1cd7e6d257670478179804aabb0978438fe0822f7221b4f7c5c72b1d6ba3b6c0"
     },
     {
       "path": "dist/luminaries-child-client.js",
@@ -124,19 +128,19 @@
     },
     {
       "path": "dist/luminaries-manager.js",
-      "sha256": "98573b2164d90b4d5ba455e66b2585d1f7f2aa4b4703fb6f18ebebfa3f26f3fb"
+      "sha256": "0421d2954012cf3e1d38ba0d21ff349f55056a949ae77bfb02c24a5d84a97d07"
     },
     {
       "path": "dist/luminaries-tools.js",
-      "sha256": "81573fbda6aaf152246bdacadf24514a65ea070284b8513674629c69f4a8c5b4"
+      "sha256": "11a2efb49bc04372404f707e30d063d2678e582b9477973f7ee4a467a15feb41"
     },
     {
       "path": "dist/model-boundary-tracker.js",
-      "sha256": "e47826e5beb770080c37154c8b455e518cf2ac8e158eb46ac947bfd96a80b415"
+      "sha256": "22d509d9f460c1049b3295b8dce3c2250c1aa8521af8af8d536f6ad891f130d5"
     },
     {
       "path": "dist/parent-context.js",
-      "sha256": "d41da79dae55d30851006224758ed2a5877065aecf368b3c72c8857d38474641"
+      "sha256": "a3b1d595e84b62cad2db89e48a0fd2ca55a25c622ce79a987bb09d6c2202790c"
     },
     {
       "path": "dist/peer-bridge.js",
@@ -144,23 +148,23 @@
     },
     {
       "path": "dist/peer-delivery.js",
-      "sha256": "2b5cafdff55dbd7baea1d1b2207fb085bd732bc503c5dd5d9efd9f250c28124e"
+      "sha256": "e8256f4f8a0989663f97b26284f5b28b56fb791b32922098576550cb3e12b24a"
     },
     {
       "path": "dist/peer-event-policy.js",
-      "sha256": "5a0824a3de76a09b7b8537e27073f6056dd3662e4bd07f8135275daa8a574bc7"
+      "sha256": "5794439c3420e68831ba2bca381c254b91ff190ee9e5f64d8562464ff11ae9f8"
     },
     {
       "path": "dist/peer-prompt.js",
-      "sha256": "20ae77ea95c83425888d276ce117e3a8244967407bc34ef119d747b6c70d43d4"
+      "sha256": "6b5b0bc42cdac0182f7a30205a65e39afd115a9937ca5adba0e586367438adf7"
     },
     {
       "path": "dist/pi-rpc.js",
-      "sha256": "75e9dee1dbffd8076cedfb3373a4b37c9c9736faf128349323fbef432f8c709f"
+      "sha256": "83e8a38e7c546a0503f722749befde76b68839dcee830bc0a0f22b4aa5c76338"
     },
     {
       "path": "dist/pi-session-host.js",
-      "sha256": "3204de665d2430b0bd6748f9b1a9ef07a6aed677a809cfaf89d9d3cbc6643c4c"
+      "sha256": "4fce88da6c7f84d0cc1eff020b1b540b77b8b5f11f92871b71d2bfbadff692c3"
     },
     {
       "path": "dist/private-path-policy.js",
@@ -176,7 +180,7 @@
     },
     {
       "path": "dist/public-pagination.js",
-      "sha256": "7dcb0a8b0ddb2fd8d1f0df4b7a682fd0f5b67a0fcd59326f6592829b5a9d2462"
+      "sha256": "e9bec38a3606b93024e25442e7d5b5396b92237c9438a627e60a0fcda4f8be0f"
     },
     {
       "path": "dist/request-deadlines.js",
@@ -184,31 +188,31 @@
     },
     {
       "path": "dist/request-policy.js",
-      "sha256": "cca820a7d8d91d844f94c54520b6e284fe71c43f3aa42ecb6804941bf72854f2"
+      "sha256": "e8e666469bcb8e52569d75a8b7d36f15d67d75e30fbe626e057d1ccfec89fbb2"
     },
     {
       "path": "dist/root-configuration.js",
-      "sha256": "089903b72176e06a162ec75201ccdc61d937873d708ba077a0a9d2b0280237a8"
+      "sha256": "27bc14d8c7d4e386c26ed6f61b86f5903459c95bd74683afbe678e8342eeb0fe"
     },
     {
       "path": "dist/root-runtime.js",
-      "sha256": "0c9de8533f20142fc54af6c58edb705002365a32432b27692f15525f88745745"
+      "sha256": "8a3907ac9d7121b2e29ba11a777c8be0b31e016ec5c537a9cb4798be7403139a"
     },
     {
       "path": "dist/scheduler-state-validation.js",
-      "sha256": "e418cd5e6a6fbb284e1312b338b4ed1b617afd64642017bb3667640f55955392"
+      "sha256": "425b0d4db143877e76370351540c1f397905f6397c6fbd650fa0300cdfe24f0d"
     },
     {
       "path": "dist/scheduler-state.js",
-      "sha256": "83c4ba6baf85556ac9ed0cf8a4c60ebc9abed19c015f4078b32b1566923818b9"
+      "sha256": "37de2611862fee4b84ac8023535b78b7fdb9e6ccc9db0acd96f75d1f8cac94f8"
     },
     {
       "path": "dist/scheduler-store.js",
-      "sha256": "5e8791b6779268ed1ec532836a1ff46676451734658ed600f54c2b21afdf9578"
+      "sha256": "b27d71748c6868736f033a931928c9489f1f5320927cd2adda3dca6ce64edd72"
     },
     {
       "path": "dist/spawn-configuration.js",
-      "sha256": "faf55b1dbdbbc08e89a9793bd683fd0d8fa884235b411675df23a638107527b0"
+      "sha256": "b55d5fe42e0392f2e01780bbea17f2b1b40a5a3643b6f46269f223b8b6d16d2a"
     },
     {
       "path": "dist/supervision.js",
@@ -220,7 +224,7 @@
     },
     {
       "path": "dist/terminal-width.js",
-      "sha256": "b7813bb746acc3a7a450033c47a3a8d1543989932ff8dfa46d3c8f4718d3cf5f"
+      "sha256": "e147c7664c6aa13780c53db2f040938a970fc1dd5a045ecbd0d4ed8a9d071439"
     },
     {
       "path": "dist/tree-policy.js",

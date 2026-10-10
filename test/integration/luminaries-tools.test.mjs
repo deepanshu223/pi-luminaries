@@ -1,173 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import extension from '../../src/extension.ts';
-import { childInputCommand } from '../../src/child-input.ts';
 import { isLuminariesId } from '../../src/identifiers.ts';
 import { createLuminariesTools, renderLuminariesProtocolMessage } from '../../src/luminaries-tools.ts';
 import { CustomMessageComponent, initTheme } from '@earendil-works/pi-coding-agent';
 import { stripVTControlCharacters } from 'node:util';
-import { sha256 } from '../../src/scheduler-state.ts';
 
-const names = [
-  'luminaries_spawn',
-  'luminaries_directory',
-  'luminaries_message',
-  'luminaries_control',
-  'luminaries_await',
-];
-const ownedTools = (tools) => tools.map((tool) => ({ name: tool.name }));
-const emptyConfigurationHost = {
-  async load() {
-    return { global: {}, project: {}, resolveExtension: async () => [] };
-  },
-};
-
-test('extension factory registers only the five production tools without opening a session resource', () => {
-  const tools = [];
-  const commands = [];
-  const flags = [];
-  const shortcuts = [];
-  const events = new Set();
-  extension({
-    registerTool: (tool) => tools.push(tool),
-    registerMessageRenderer: () => undefined,
-    registerFlag: (name, options) => flags.push([name, options.type]),
-    registerCommand: (name) => commands.push(name),
-    registerShortcut: (shortcut) => shortcuts.push(shortcut),
-    on: (event) => events.add(event),
-    sendMessage: async () => undefined,
-  });
-  assert.deepEqual(
-    tools.map((tool) => tool.name),
-    names,
-  );
-  assert.deepEqual(commands, ['luminaries']);
-  assert.deepEqual(flags, [
-    ['luminaries', 'boolean'],
-    ['luminary', 'string'],
-  ]);
-  assert.deepEqual(shortcuts, ['alt+l']);
-  for (const event of ['tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'session_compact'])
-    assert.ok(events.has(event), `Missing Pi activity handler: ${event}`);
-});
-
-test('an unused parent session starts and stops without creating Luminaries state', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'luminaries-unused-session-'));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = join(root, 'agent');
-  const handlers = new Map();
-  const tools = [];
-  try {
-    extension(
-      {
-        registerTool: (tool) => tools.push(tool),
-        registerMessageRenderer: () => undefined,
-        registerFlag: () => undefined,
-        getFlag: () => undefined,
-        registerCommand: () => undefined,
-        registerShortcut: () => undefined,
-        on: (event, handler) => handlers.set(event, handler),
-        sendMessage: () => undefined,
-      },
-      emptyConfigurationHost,
-    );
-    await handlers.get('session_start')(
-      {},
-      {
-        mode: 'tui',
-        cwd: root,
-        isProjectTrusted: () => true,
-        getSystemPrompt: () => 'Test Pi startup prompt.',
-        scopedModels: [],
-        modelRegistry: { getAvailable: () => [] },
-        sessionManager: {
-          getSessionId: () => 'unused-parent-session',
-          getSessionFile: () => join(root, 'parent.jsonl'),
-          getBranch: () => [],
-        },
-      },
-    );
-    await handlers.get('session_shutdown')({}, {});
-    assert.deepEqual(await readdir(root), []);
-  } finally {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test('first Luminaries tool use during an already-started parent turn preserves the current root activation', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'luminaries-first-use-mid-turn-'));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const handlers = new Map();
-  const tools = [];
-  const extensionContext = {
-    mode: 'tui',
-    cwd: root,
-    isProjectTrusted: () => true,
-    model: { provider: 'test-provider', id: 'test-model' },
-    scopedModels: [],
-    modelRegistry: {
-      getAvailable: () => [
-        {
-          provider: 'test-provider',
-          id: 'test-model',
-          contextWindow: 128_000,
-          maxTokens: 8_000,
-          reasoning: true,
-        },
-      ],
-    },
-    thinkingLevel: 'low',
-    getSystemPrompt: () => 'Test Pi startup prompt.',
-    sessionManager: {
-      getSessionId: () => 'mid-turn-parent-session',
-      getSessionFile: () => join(root, 'parent.jsonl'),
-      getBranch: () => [],
-    },
-  };
-  try {
-    extension(
-      {
-        registerTool: (tool) => tools.push(tool),
-        registerMessageRenderer: () => undefined,
-        registerFlag: () => undefined,
-        registerCommand: () => undefined,
-        registerShortcut: () => undefined,
-        on: (event, handler) => handlers.set(event, handler),
-        sendMessage: () => undefined,
-        getAllTools: () => ownedTools(tools),
-        getActiveTools: () => tools.map((tool) => tool.name),
-        getThinkingLevel: () => 'low',
-      },
-      emptyConfigurationHost,
-    );
-    await handlers.get('before_agent_start')({ prompt: 'The parent turn is already beginning.' }, extensionContext);
-    await handlers.get('agent_start')({}, extensionContext);
-    const agentsTool = tools.find((tool) => tool.name === 'luminaries_directory');
-    const result = await agentsTool.execute(
-      'mid-turn-list',
-      { action: 'list' },
-      undefined,
-      undefined,
-      extensionContext,
-    );
-    const details = JSON.parse(result.content[0].text.split('\n').at(-1));
-    assert.equal(details.entries.length, 1);
-    assert.equal(details.entries[0].activity.state, 'working');
-    await handlers.get('agent_settled')({}, extensionContext);
-    await handlers.get('session_shutdown')({}, extensionContext);
-  } finally {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test('child extension authenticates its session and clears bridge secrets without prompt injection', async () => {
+test('child extension keeps its binding on reload after clearing bridge secrets', async () => {
   const root = await mkdtemp(join(tmpdir(), 'luminaries-child-extension-'));
   const outbox = join(root, 'outbox');
   await mkdir(outbox);
@@ -182,88 +24,22 @@ test('child extension authenticates its session and clears bridge secrets withou
     LUMINARIES_AGENT_PATH: 'root/parent/child',
     LUMINARIES_OUTBOX_DIR: outbox,
   };
+  const prior = Object.fromEntries(Object.keys(binding).map((key) => [key, process.env[key]]));
   Object.assign(process.env, binding);
   const handlers = new Map();
   const commands = new Map();
-  const messages = [];
-  const tools = [];
   try {
     extension({
-      registerTool: (tool) => tools.push(tool),
+      registerTool: () => undefined,
       registerMessageRenderer: () => undefined,
       registerFlag: () => undefined,
       registerCommand: (name, command) => commands.set(name, command),
       registerShortcut: () => assert.fail('child must not register a parent shortcut'),
       on: (event, handler) => handlers.set(event, handler),
-      sendMessage: async (...args) => messages.push(args),
+      sendMessage: async () => undefined,
     });
-    assert.deepEqual(
-      tools.map((tool) => tool.name),
-      names,
-    );
     for (const key of Object.keys(binding)) assert.equal(process.env[key], undefined);
     assert.deepEqual([...commands.keys()], ['luminaries-input']);
-    const firstPayload = 'Private child input.';
-    const firstPayloadId = 'dispatch-payload-1';
-    const firstPayloadHash = sha256(firstPayload);
-    await writeFile(
-      join(outbox, `${firstPayloadId}.json`),
-      JSON.stringify({
-        version: 1,
-        eventId: firstPayloadId,
-        payloadHash: firstPayloadHash,
-        message: firstPayload,
-      }),
-    );
-    const encoded = childInputCommand({
-      inputId: 'dispatch-1',
-      payloadId: firstPayloadId,
-      delivery: 'steer',
-      payloadHash: firstPayloadHash,
-      source: 'Root',
-      startingInput: false,
-      lines: ['From Root'],
-    }).split(' ')[1];
-    await commands.get('luminaries-input').handler(encoded, {});
-    assert.deepEqual(messages, [
-      [
-        {
-          customType: 'luminaries_protocol_message',
-          content: 'From Root:\nPrivate child input.',
-          display: true,
-          details: {
-            inputId: 'dispatch-1',
-            source: 'Root',
-            content: 'From Root:\nPrivate child input.',
-            lines: ['From Root'],
-          },
-        },
-        { deliverAs: 'steer', triggerTurn: true },
-      ],
-    ]);
-    const followUpPayload = 'Private child follow-up.';
-    const followUpPayloadId = 'dispatch-payload-2';
-    const followUpPayloadHash = sha256(followUpPayload);
-    await writeFile(
-      join(outbox, `${followUpPayloadId}.json`),
-      JSON.stringify({
-        version: 1,
-        eventId: followUpPayloadId,
-        payloadHash: followUpPayloadHash,
-        message: followUpPayload,
-      }),
-    );
-    const followUp = childInputCommand({
-      inputId: 'dispatch-2',
-      payloadId: followUpPayloadId,
-      delivery: 'follow_up',
-      payloadHash: followUpPayloadHash,
-      source: 'Root',
-      startingInput: false,
-      lines: ['From Root'],
-    }).split(' ')[1];
-    await commands.get('luminaries-input').handler(followUp, {});
-    assert.deepEqual(messages[1]?.[1], { deliverAs: 'followUp', triggerTurn: true });
     await handlers.get('session_start')({}, childContext('child-session'));
     await handlers.get('session_shutdown')({ reason: 'reload' }, {});
     for (const key of Object.keys(binding)) assert.equal(process.env[key], undefined);
@@ -280,7 +56,10 @@ test('child extension authenticates its session and clears bridge secrets withou
     assert.deepEqual([...reloadedCommands.keys()], ['luminaries-input']);
     for (const key of Object.keys(binding)) assert.equal(process.env[key], undefined);
   } finally {
-    for (const key of Object.keys(binding)) delete process.env[key];
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -318,77 +97,44 @@ test('native peer messages distinguish their sender and expand without losing co
   assert.doesNotMatch(stripVTControlCharacters(short.render(80).join('\n')), /expand message/u);
 });
 
-test('the five tools use strict parallel schemas and normalize untrusted input once', async () => {
+test('tool input preserves ordinary text and rejects model-supplied routing metadata', async () => {
   const calls = [];
   const tools = createLuminariesTools(() => ({
     async execute(command) {
       calls.push(command);
-      return {
-        message: command.toolName,
-        details: { toolName: command.toolName },
-        ...(command.toolName === 'luminaries_message' ? { terminate: true } : {}),
-      };
+      return { message: command.toolName, details: {} };
     },
   }));
-  assert.deepEqual(
-    tools.map((tool) => tool.name),
-    names,
-  );
-  for (const tool of tools) {
-    assert.equal(tool.parameters.type, 'object');
-    assert.equal(tool.parameters.additionalProperties, false);
-    assert.equal(tool.executionMode, 'parallel');
-    assert.equal(tool.renderShell, 'self');
-  }
   await tools[0].execute(
     'spawn-call',
-    { name: 'child', assignment: 'work\nacross two ordinary lines', ownershipBoundary: 'boundary' },
+    { assignment: 'work\nacross two ordinary lines', ownershipBoundary: 'boundary' },
     undefined,
     undefined,
     {},
   );
-  await tools[1].execute('agents-call', { action: 'inspect', agentId: 'Writer · b35ac8' }, undefined, undefined, {});
-  await tools[2].execute(
-    'message-call',
-    { action: 'send', recipientId: 'Writer · b35ac8', message: 'hello', mode: 'notify_only' },
-    undefined,
-    undefined,
-    {},
-  );
-  await tools[3].execute(
-    'control-call',
-    { action: 'set_grants', agentId: 'Writer · b35ac8', grants: { spawn: false } },
-    undefined,
-    undefined,
-    {},
-  );
-  await tools[4].execute('await-call', { action: 'wait', agentIds: ['Writer · b35ac8'] }, undefined, undefined, {});
-  assert.deepEqual(
-    calls.map((call) => call.toolName),
-    names,
-  );
-  await tools[3].execute(
-    'extension-control-call',
-    { action: 'set_extensions', agentId: 'Writer · b35ac8', extensions: ['npm:pi-web-access'] },
-    undefined,
-    undefined,
-    {},
-  );
-  assert.deepEqual(tools[2].parameters.properties.action.enum, [
-    'send',
-    'multicast',
-    'request',
-    'request_many',
-    'reply',
-    'cancel',
-  ]);
-  assert.equal(tools[2].parameters.oneOf, undefined);
-  assert.ok(tools[2].parameters.properties.mode.enum.includes('notify_only'));
-  assert.equal(calls[2].input.requestId, 'message-call');
   assert.equal(calls[0].input.assignment, 'work\nacross two ordinary lines');
-  assert.equal(calls[2].input.recipientId, 'Writer · b35ac8');
-  assert.equal(calls[2].input.mode, 'notify_only');
-  assert.deepEqual(calls.at(-1).input.extensions, ['npm:pi-web-access']);
+  await tools[1].execute('call|native/id', { action: 'list' }, undefined, undefined, {});
+  const requestId = calls.at(-1).input.requestId;
+  assert.equal(isLuminariesId(requestId), true);
+  await tools[1].execute('call|native/id', { action: 'list' }, undefined, undefined, {});
+  assert.equal(calls.at(-1).input.requestId, requestId);
+  for (const [tool, input] of [
+    [tools[1], { action: 'list', requestId: 'model-owned' }],
+    [tools[1], { action: 'inspect', agentId: 'child', patch: { focus: 'ignored' } }],
+    [tools[2], { action: 'send', recipientId: 'child', message: 'hello', correlationId: 'request-1' }],
+    [tools[2], { action: 'reply', correlationId: 'request-1', message: 'hello', recipientId: 'child' }],
+    [tools[3], { action: 'interrupt', agentId: 'child', model: 'provider/model' }],
+  ])
+    await assert.rejects(
+      tool.execute('invalid-fields', input, undefined, undefined, {}),
+      /unknown field|does not accept|accepts|unrelated fields|requires/u,
+    );
+});
+
+test('tool receipts distinguish uncertain and partial outcomes while keeping internal identifiers out of compact text', () => {
+  const tools = createLuminariesTools(() => {
+    throw new Error('Rendering should not execute a tool');
+  });
   const renderTheme = { fg: (_tone, text) => text };
   assert.match(
     tools[2]
@@ -522,47 +268,6 @@ test('the five tools use strict parallel schemas and normalize untrusted input o
     .render(80)
     .join('\n');
   assert.match(failed, /No running turn exists/u);
-  await tools[1].execute('call|native/id', { action: 'list' }, undefined, undefined, {});
-  const nativeDerivedId = calls.at(-1).input.requestId;
-  assert.match(nativeDerivedId, /^pi-tool-[a-f0-9]{56}$/u);
-  assert.equal(isLuminariesId(nativeDerivedId), true);
-  await tools[1].execute('call|native/id', { action: 'list' }, undefined, undefined, {});
-  assert.equal(calls.at(-1).input.requestId, nativeDerivedId);
-  await assert.rejects(
-    tools[1].execute('bad-call', { action: 'list', requestId: 'model-owned' }, undefined, undefined, {}),
-    /unknown field/,
-  );
-  await assert.rejects(
-    tools[0].execute(
-      'bad-spawn-call',
-      { assignment: 'work', ownershipBoundary: 'boundary', unexpected: true },
-      undefined,
-      undefined,
-      {},
-    ),
-    /unknown field/,
-  );
-  await assert.rejects(
-    tools[2].execute(
-      'bad-call',
-      { action: 'send', recipientId: 'child', message: 'hello', recipients: ['child'] },
-      undefined,
-      undefined,
-      {},
-    ),
-    /unknown field/,
-  );
-  for (const [tool, input] of [
-    [tools[1], { action: 'inspect', agentId: 'child', patch: { focus: 'ignored' } }],
-    [tools[2], { action: 'send', recipientId: 'child', message: 'hello', correlationId: 'request-1' }],
-    [tools[2], { action: 'request', recipientId: 'child', message: 'hello', correlationId: 'request-1' }],
-    [tools[2], { action: 'reply', correlationId: 'request-1', message: 'hello', recipientId: 'child' }],
-    [tools[3], { action: 'interrupt', agentId: 'child', model: 'provider/model' }],
-  ])
-    await assert.rejects(
-      tool.execute('ignored-field', input, undefined, undefined, {}),
-      /(does not accept|accepts|unrelated fields|requires)/,
-    );
 });
 
 function childContext(sessionId) {

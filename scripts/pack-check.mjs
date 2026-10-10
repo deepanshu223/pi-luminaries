@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { createServer, createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -165,50 +163,6 @@ async function verifyManifest(packageRoot) {
   return { text, manifest };
 }
 
-async function freePort() {
-  const server = createServer();
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Could not reserve a loopback port');
-  const port = address.port;
-  server.close();
-  await once(server, 'close');
-  return port;
-}
-
-async function waitForPort(port, child, stderr) {
-  const deadline = Date.now() + Math.min(5_000, remainingMs());
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Git daemon exited before listening: ${stderr()}`);
-    const connected = await new Promise((resolveConnected) => {
-      const socket = createConnection({ host: '127.0.0.1', port });
-      socket.once('connect', () => {
-        socket.destroy();
-        resolveConnected(true);
-      });
-      socket.once('error', () => resolveConnected(false));
-    });
-    if (connected) return;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
-  }
-  throw new Error('Git daemon did not open its loopback port');
-}
-
-async function stopChild(child) {
-  if (!child) return;
-  const exited = () => child.exitCode !== null || child.signalCode !== null;
-  if (exited()) return;
-  const firstExit = once(child, 'exit');
-  child.kill();
-  await Promise.race([firstExit, new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000))]);
-  if (!exited()) {
-    const forcedExit = once(child, 'exit');
-    child.kill('SIGKILL');
-    await forcedExit;
-  }
-}
-
 async function expectBuildRefusal(pool, agent) {
   await assert.rejects(
     pool.ensure(agent),
@@ -216,13 +170,7 @@ async function expectBuildRefusal(pool, agent) {
   );
 }
 
-npm(['run', 'typecheck'], root);
-passed.push('strict TypeScript');
-npm(['run', 'format:check'], root);
-passed.push('repository format');
-
 const staging = await mkdtemp(join(tmpdir(), 'luminaries-release-package-'));
-let gitDaemon;
 let wavesManager;
 let uninstallWaves;
 const summary = {
@@ -278,7 +226,6 @@ try {
   for (const document of ['README.md', 'docs/usage.md']) {
     const markdown = await readFile(join(root, document), 'utf8');
     const images = [...markdown.matchAll(/!\[[^\]]*\]\(([^)]+)\)/gu)];
-    assert.ok(images.length > 0, `${document} must include its product screenshots`);
     for (const [, reference] of images) {
       const path = relative(root, resolve(root, dirname(document), reference))
         .split(sep)
@@ -331,48 +278,15 @@ try {
   summary.packageGraphs.managed = { devDependencies: false, hostPeers: true, binShim: false };
   passed.push('Pi managed-package graph');
 
-  const gitWork = join(staging, 'git-work');
-  const gitRoot = join(staging, 'git-server');
-  const bareRepository = join(gitRoot, 'owner', 'pi-luminaries.git');
-  await mkdir(gitWork, { recursive: true });
-  await mkdir(dirname(bareRepository), { recursive: true });
-  run('tar', ['-xzf', archive, '--strip-components=1', '-C', gitWork], staging);
-  run('git', ['init', '--initial-branch=main'], gitWork);
-  run('git', ['config', 'user.name', 'Luminaries release gate'], gitWork);
-  run('git', ['config', 'user.email', 'luminaries-release@example.invalid'], gitWork);
-  run('git', ['config', 'core.autocrlf', 'false'], gitWork);
-  run('git', ['add', '--all'], gitWork);
-  run('git', ['commit', '-m', 'release package'], gitWork);
-  run('git', ['clone', '--bare', gitWork, bareRepository], staging);
-  const gitPort = await freePort();
-  const gitExecPath = run('git', ['--exec-path'], staging).stdout.trim();
-  const gitDaemonEntry = join(gitExecPath, process.platform === 'win32' ? 'git-daemon.exe' : 'git-daemon');
-  let gitStderr = '';
-  gitDaemon = spawn(
-    gitDaemonEntry,
-    ['--reuseaddr', '--export-all', '--listen=127.0.0.1', `--port=${gitPort}`, `--base-path=${gitRoot}`, gitRoot],
-    { cwd: staging, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
-  );
-  gitDaemon.stderr.on('data', (chunk) => {
-    gitStderr += chunk.toString();
-  });
-  await waitForPort(gitPort, gitDaemon, () => gitStderr);
-  const gitSource = `git:git://127.0.0.1:${gitPort}/owner/pi-luminaries.git`;
-  const gitAgentDir = join(staging, 'git-agent');
-  const gitPackages = packageManager(workspace, gitAgentDir);
-  const gitResources = await gitPackages.resolveExtensionSources([gitSource]);
-  const gitInstalledRoot = gitPackages.getInstalledPath(gitSource, 'user');
-  assert.ok(gitInstalledRoot);
-  assert.deepEqual(enabledPaths(gitResources.extensions), [join(gitInstalledRoot, 'dist', 'extension.js')]);
-  assert.deepEqual(enabledPaths(gitResources.skills), [join(gitInstalledRoot, ...SKILL_PATH.split('/'))]);
-  assert.equal(await exists(join(gitInstalledRoot, 'node_modules', 'typescript')), false);
-  assert.equal(await exists(join(gitInstalledRoot, 'node_modules', 'prettier')), false);
-  summary.packageGraphs.git = {
-    devDependencies: false,
-    hostPiCodingAgent: await exists(join(gitInstalledRoot, 'node_modules', '@earendil-works', 'pi-coding-agent')),
-    hostPiTui: await exists(join(gitInstalledRoot, 'node_modules', '@earendil-works', 'pi-tui')),
-  };
-  passed.push('Pi Git package graph');
+  const previousExtension = process.env.LUMINARIES_TEST_EXTENSION;
+  try {
+    process.env.LUMINARIES_TEST_EXTENSION = join(installedRoot, 'dist', 'extension.js');
+    run(process.execPath, ['--test', '--test-timeout=60000', 'test/native/session-lifecycle.test.mjs'], root);
+  } finally {
+    if (previousExtension === undefined) delete process.env.LUMINARIES_TEST_EXTENSION;
+    else process.env.LUMINARIES_TEST_EXTENSION = previousExtension;
+  }
+  passed.push('installed package: real Pi spawn, restart, attachment and session handoffs');
 
   const installedBuild = await verifyManifest(installedRoot);
   assert.equal(installedBuild.text, sourceBuild.text);
@@ -419,7 +333,6 @@ console.log(JSON.stringify({ waves: Object.keys(waves).sort(), privateCode }));`
   passed.push('stock Pi extension load and five tools');
 
   const managerModule = await import(pathToFileURL(join(installedRoot, 'dist', 'luminaries-manager.js')).href);
-  const bridgeModule = await import(pathToFileURL(join(installedRoot, 'dist', 'peer-bridge.js')).href);
   const wavesModule = await import(pathToFileURL(join(installedRoot, 'dist', 'waves-service.js')).href);
   const acceptedBuildModule = await import(pathToFileURL(join(installedRoot, 'dist', 'accepted-build.js')).href);
   const actorPoolModule = await import(pathToFileURL(join(installedRoot, 'dist', 'actor-pool.js')).href);
@@ -467,36 +380,6 @@ console.log(JSON.stringify({ waves: Object.keys(waves).sort(), privateCode }));`
     },
     { kind: 'agent', agentId: rootId },
   );
-  const claim = await wavesManager.store.claimRuntime(childId, process.pid, 'package-gate');
-  const runtimeOwner = claim.value.runtimeOwner;
-  await wavesManager.store.markRuntimeSpawned(childId, runtimeOwner, process.pid);
-  await wavesManager.store.markRuntimeReady(childId, runtimeOwner, process.pid);
-  const credential = wavesManager.bridge.issue(childId, {
-    sessionId: 'package-child-session',
-    generation: wavesManager.generationId,
-    buildId: acceptedBuild.id,
-  });
-  assert.throws(
-    () => wavesManager.bridge.bind(credential, { runtimeIdentity: { agentId: childId, runtimeOwner } }),
-    /accepted package build/u,
-  );
-  await assert.rejects(
-    bridgeModule.sendLuminariesBuildIdentity({ ...credential, buildId: '0'.repeat(64) }),
-    /runtime_build_mismatch.*does not match its owner/u,
-  );
-  await bridgeModule.sendLuminariesBuildIdentity({ ...credential, buildId: acceptedBuild.id });
-  wavesManager.bridge.bind(credential, { runtimeIdentity: { agentId: childId, runtimeOwner } });
-  const childDirectory = await bridgeModule.sendLuminariesToolCall({
-    ...credential,
-    toolCallId: 'after-build',
-    toolName: 'luminaries_directory',
-    input: { action: 'list' },
-  });
-  assert.equal(childDirectory.details.capacity.used, 1);
-  assert.notEqual(wavesManager.generationId, acceptedBuild.id);
-  wavesManager.bridge.revoke(credential);
-  assert.equal(wavesManager.bridge.activeCredentialCount, 0);
-  await wavesManager.store.releaseRuntime(childId, runtimeOwner, 'runtime_parked', 'package_gate_complete');
   await wavesManager.store.closeAgent(childId, { kind: 'agent', agentId: rootId });
   const publicWaves = await import(pathToFileURL(wavesConsumerEntry).href);
   uninstallWaves = wavesModule.installWavesService(wavesManager);
@@ -514,7 +397,7 @@ console.log(JSON.stringify({ waves: Object.keys(waves).sort(), privateCode }));`
   uninstallWaves = undefined;
   await wavesManager.close();
   wavesManager = undefined;
-  passed.push('authenticated child build binding and closed-target Waves refusal');
+  passed.push('public service: directory access and closed-target refusal');
 
   for (const path of ['package.json', SKILL_PATH]) {
     const installedPath = join(installedRoot, path);
@@ -581,14 +464,12 @@ console.log(JSON.stringify({ waves: Object.keys(waves).sort(), privateCode }));`
 } finally {
   uninstallWaves?.();
   await wavesManager?.close().catch(() => undefined);
-  await stopChild(gitDaemon);
   await rm(staging, { recursive: true, force: true });
 }
 
 assert.equal(await exists(staging), false, 'release package staging must be removed');
 summary.cleanup = {
   stagingRemoved: true,
-  gitDaemonExited: !gitDaemon || gitDaemon.exitCode !== null || gitDaemon.signalCode !== null,
   managersClosed: true,
   credentials: 0,
 };

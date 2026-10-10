@@ -2,7 +2,7 @@ import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { hasUnsafeHumanFacingControl } from "./identifiers.js";
 import { LUMINARIES_IDENTITY } from "./product-identity.js";
-import { deepFreeze, isRecord } from "./scheduler-state.js";
+import { deepFreeze, isRecord, LUMINARIES_SERVICE_PERMISSIONS, } from "./scheduler-state.js";
 const DEFAULT_SERVICE_GRANT = [
     'spawn',
     'directory',
@@ -12,16 +12,7 @@ const DEFAULT_SERVICE_GRANT = [
     'follow_up',
     'interrupt',
 ];
-const SERVICE_PERMISSIONS = new Set([
-    ...DEFAULT_SERVICE_GRANT,
-    'close',
-    'close_subtree',
-    'resume',
-    'set_model',
-    'set_thinking',
-    'set_extensions',
-    'set_grants',
-]);
+const SERVICE_PERMISSIONS = new Set(LUMINARIES_SERVICE_PERMISSIONS);
 const SETTING_KEYS = new Set(['maxOpenAgents', 'maxDepth', 'agentNames', 'agentExtensions', 'serviceGrant']);
 function settingSection(value, source) {
     if (!isRecord(value))
@@ -54,6 +45,28 @@ export function managedExtensionSpecifier(value, label = 'Pi extension source') 
     if (typeof value !== 'string' || !value || value === '*' || value.length > 4096 || hasUnsafeHumanFacingControl(value))
         throw new Error(`${label} contains an invalid Pi extension specifier`);
     return value;
+}
+export async function resolveManagedExtensionEntry(specifier, state, source, resolvePaths) {
+    if (state === 'deny')
+        return { specifier, state, source, paths: [] };
+    try {
+        const resolvedPaths = await resolvePaths(specifier, source);
+        if (resolvedPaths.length === 0)
+            throw new Error(`Pi extension '${specifier}' resolved no loadable extensions`);
+        const paths = [
+            ...new Set(await Promise.all(resolvedPaths.map(async (path) => resolve(await realpath(path))))),
+        ].sort();
+        return { specifier, state, source, paths };
+    }
+    catch (error) {
+        return {
+            specifier,
+            state,
+            source,
+            paths: [],
+            unavailable: error instanceof Error ? error.message : String(error),
+        };
+    }
 }
 function settingsView(value, source) {
     const section = settingSection(value, source);
@@ -117,19 +130,8 @@ export async function resolveRootConfiguration(options) {
     for (const [specifier, setting] of project.agentExtensions)
         extensionSettings.set(specifier, setting);
     const entries = [];
-    for (const [specifier, setting] of extensionSettings) {
-        if (setting.state === 'deny') {
-            entries.push({ specifier, ...setting, paths: [] });
-            continue;
-        }
-        const resolvedPaths = await loaded.resolveExtension(specifier, setting.source);
-        if (resolvedPaths.length === 0)
-            throw new Error(`Pi extension '${specifier}' resolved no loadable extensions`);
-        const paths = [
-            ...new Set(await Promise.all(resolvedPaths.map(async (path) => resolve(await realpath(path))))),
-        ].sort();
-        entries.push({ specifier, ...setting, paths });
-    }
+    for (const [specifier, setting] of extensionSettings)
+        entries.push(await resolveManagedExtensionEntry(specifier, setting.state, setting.source, (specifier, source) => loaded.resolveExtension(specifier, source)));
     entries.sort((left, right) => left.specifier.localeCompare(right.specifier));
     const permitted = entries.filter((entry) => entry.state !== 'deny');
     const extensions = {
@@ -160,6 +162,9 @@ export function resolveManagedExtensionSelection(policy, selected) {
         return entry;
     });
     const loaded = [...policy.entries.filter((entry) => entry.state === 'always'), ...selectedEntries];
+    const unavailable = loaded.find((entry) => !entry.paths.length);
+    if (unavailable)
+        throw new Error(`Pi extension '${unavailable.specifier}' is unavailable; reinstall it or change the expert's selection.`);
     return {
         extensions: [...new Set(loaded.flatMap((entry) => entry.paths))].sort(),
     };

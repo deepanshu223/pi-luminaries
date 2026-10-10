@@ -2,6 +2,7 @@ import { hostname } from 'node:os';
 import { applyAssistantStreamEvent, assistantSnapshotEvent } from "./assistant-stream.js";
 import { childInputCommand } from "./child-input.js";
 import { ModelBoundaryTracker } from "./model-boundary-tracker.js";
+import { LUMINARIES_IDENTITY } from "./product-identity.js";
 import { PiRpcCommandError, PiRpcProcess, buildPrivateSessionLaunch, } from "./pi-rpc.js";
 import { processAlive } from "./process-liveness.js";
 import { validatePhysicalSessionNamespace } from "./private-path-policy.js";
@@ -25,9 +26,6 @@ function recordOf(value) {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? Object.fromEntries(Object.entries(value))
         : undefined;
-}
-function responseWasRefused(response) {
-    return isRecord(response.data) && response.data.accepted === false;
 }
 function cancelledExtensionUiRequest(value) {
     const record = recordOf(value);
@@ -58,6 +56,8 @@ export class DurablePiActor {
     failure;
     recoveryRequired = false;
     parkAfterSettlement;
+    pendingInput;
+    queueReset;
     constructor(options, rpc, sessionFile, runtimeOwner) {
         this.agentId = options.agentId;
         this.rpc = rpc;
@@ -164,7 +164,6 @@ export class DurablePiActor {
                 invocation: launch.invocation,
                 cwd: launch.cwd,
                 env: options.env,
-                unsetEnv: agent.launch.noContextFiles ? ['APPEND_SYSTEM', 'PI_APPEND_SYSTEM', 'PI_SYSTEM_PROMPT'] : undefined,
                 limits: options.limits,
                 requestTimeoutMs: timeoutMs,
             });
@@ -250,6 +249,8 @@ export class DurablePiActor {
     }
     deliver(plan) {
         this.assertUsable();
+        if (this.queueReset)
+            throw new SchedulerStateError('delivery_race', `Agent '${this.agentId}' is withdrawing queued input before settlement`);
         if (plan.recipientId !== this.agentId || plan.targetRuntimeOwner !== this.runtimeOwner)
             throw new SchedulerStateError('runtime_owner', `Delivery plan does not belong to '${this.agentId}'`);
         let turn;
@@ -265,12 +266,18 @@ export class DurablePiActor {
             turn = this.current;
         }
         const boundary = this.boundaries.observe(plan.attemptId);
-        const response = this.request(this.managedInput(boundary.inputId, plan));
-        const accepted = response.then((value) => {
-            if (responseWasRefused(value))
-                throw plan.deliveryKind === 'wake'
-                    ? new PiRpcCommandError('prompt', 'Pi refused managed input')
-                    : new SchedulerStateError('delivery_race', `Agent '${this.agentId}' settled before queued input admission`);
+        const pending = {
+            response: this.request(this.managedInput(boundary.inputId, plan)),
+        };
+        this.pendingInput = pending;
+        const accepted = pending.response
+            .then(() => {
+            if (pending.failure)
+                throw pending.failure;
+        })
+            .finally(() => {
+            if (this.pendingInput === pending)
+                this.pendingInput = undefined;
         });
         void accepted.catch((error) => {
             if (!(error instanceof PiRpcCommandError))
@@ -307,10 +314,7 @@ export class DurablePiActor {
             throw new SchedulerStateError('runtime_unavailable', `Agent '${this.agentId}' has no running turn`);
         const boundary = this.boundaries.observeInterrupt(inputId);
         const response = this.request({ type: 'abort', id: inputId });
-        const accepted = response.then((value) => {
-            if (responseWasRefused(value))
-                throw new PiRpcCommandError('abort', 'Pi refused interrupt');
-        });
+        const accepted = response.then(() => undefined);
         return {
             accepted,
             settled: turn.done.promise,
@@ -362,6 +366,13 @@ export class DurablePiActor {
         }))));
     }
     captureRpcEvent(event) {
+        if (isRecord(event) &&
+            event.type === 'extension_error' &&
+            event.event === 'command' &&
+            event.extensionPath === `command:${LUMINARIES_IDENTITY.namespace.childInputCommand}` &&
+            typeof event.error === 'string' &&
+            this.pendingInput)
+            this.pendingInput.failure = new PiRpcCommandError('prompt', event.error);
         this.captureActivity(event);
         for (const listener of this.uiChangeListeners) {
             try {
@@ -371,10 +382,34 @@ export class DurablePiActor {
                 this.addDiagnostic(errorOf(error));
             }
         }
-        if (this.boundaries.captureEvent(event) && this.current)
-            this.current.abortSeen = true;
-        if (isRecord(event) && event.type === 'agent_settled')
-            this.finishCurrent();
+        if (isRecord(event) && event.type === 'agent_settled' && this.boundaries.hasPendingInput) {
+            const pending = this.pendingInput?.response;
+            const reset = (async () => {
+                // abort leaves custom messages queued; only a successful clear permits safe requeue.
+                await pending?.catch(() => undefined);
+                await this.request({ type: 'clear_queue' });
+                if (this.boundaries.captureEvent(event, true) && this.current)
+                    this.current.abortSeen = true;
+                this.finishCurrent();
+            })();
+            this.queueReset = reset;
+            void reset
+                .catch((error) => {
+                this.recoveryRequired = true;
+                this.boundaries.reject(errorOf(error));
+                this.rejectTurns(errorOf(error));
+            })
+                .finally(() => {
+                if (this.queueReset === reset)
+                    this.queueReset = undefined;
+            });
+        }
+        else {
+            if (this.boundaries.captureEvent(event, true) && this.current)
+                this.current.abortSeen = true;
+            if (isRecord(event) && event.type === 'agent_settled')
+                this.finishCurrent();
+        }
     }
     finishCurrent() {
         const turn = this.current;

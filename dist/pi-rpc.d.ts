@@ -46,7 +46,6 @@ export interface PiRpcOptions {
     invocation: PiInvocation;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    unsetEnv?: readonly string[];
     limits?: PiRpcLimits;
     requestTimeoutMs?: number;
 }
@@ -87,8 +86,6 @@ export declare class PiRpcProcess extends EventEmitter {
     private failureEmitted;
     private closePromise?;
     private terminationPromise?;
-    private settlementActive;
-    private cancelSettlement?;
     private readonly stderrRing;
     private readonly diagnosticsRing;
     private readonly limits;
@@ -101,12 +98,6 @@ export declare class PiRpcProcess extends EventEmitter {
         privateSessionDir: string;
         sessionFile?: string;
     }, timeoutMs?: number): Promise<PiState>;
-    requestAndWaitForSettled(command: Record<string, unknown>, timeoutMs?: number | null, onAdmitted?: (response: RpcResponse) => Promise<void>, settlementTimeoutMs?: number | null): Promise<{
-        response: RpcResponse;
-        settled: Record<string, unknown>;
-    }>;
-    waitForAgentSettled(timeoutMs?: number): Promise<Record<string, unknown>>;
-    private createSettlementWait;
     get stderr(): readonly string[];
     get diagnostics(): readonly string[];
     get process(): ChildProcess | undefined;

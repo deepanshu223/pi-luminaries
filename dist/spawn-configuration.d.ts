@@ -6,7 +6,6 @@ export interface ModelDescriptor {
     provider: string;
     id: string;
     contextWindow: number;
-    maxOutputTokens?: number;
     reasoning?: boolean;
     thinkingLevel?: ThinkingLevel;
 }
@@ -31,7 +30,6 @@ export interface EffectiveSpawnConfiguration {
     model?: string;
     modelKey?: string;
     contextWindow?: number;
-    maxOutputTokens?: number;
     thinking?: ThinkingLevel;
     cwd: string;
     extensions?: string[];

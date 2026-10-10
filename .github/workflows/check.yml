@@ -13,7 +13,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            pi: '0.84.4'
+          - os: windows-latest
+            pi: '1.1.0'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
@@ -31,3 +35,10 @@ jobs:
         timeout-minutes: 3
       - run: npm run pack:check
         timeout-minutes: 3
+      - name: Install compatibility host
+        run: npm install --prefix .pi/test-host --no-audit --no-fund --package-lock=false @earendil-works/pi-coding-agent@${{ matrix.pi }}
+      - name: Test Pi ${{ matrix.pi }}
+        run: npm run test:native
+        timeout-minutes: 3
+        env:
+          LUMINARIES_TEST_PI: ${{ github.workspace }}/.pi/test-host/node_modules/@earendil-works/pi-coding-agent/dist/cli.js

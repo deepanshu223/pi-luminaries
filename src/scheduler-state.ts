@@ -13,7 +13,7 @@ import { LUMINARIES_IDENTITY } from './product-identity.ts';
 export { isLuminariesId, isLowercaseSha256, isPiSessionId } from './identifiers.ts';
 
 const FORBIDDEN_MAP_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
-const SERVICE_PERMISSIONS = new Set<LuminariesServicePermission>([
+export const LUMINARIES_SERVICE_PERMISSIONS = [
   'spawn',
   'directory',
   'message',
@@ -28,7 +28,8 @@ const SERVICE_PERMISSIONS = new Set<LuminariesServicePermission>([
   'set_thinking',
   'set_extensions',
   'set_grants',
-]);
+] as const;
+const SERVICE_PERMISSIONS = new Set<string>(LUMINARIES_SERVICE_PERMISSIONS);
 const PEER_EVENT_STATUSES = new Set([
   'accepted',
   'sending',
@@ -79,21 +80,7 @@ export interface AgentLaunchRecord {
   themes: string[];
 }
 export type ManagedExtensionState = 'always' | 'allow' | 'deny';
-export type LuminariesServicePermission =
-  | 'spawn'
-  | 'directory'
-  | 'message'
-  | 'watch'
-  | 'steer'
-  | 'follow_up'
-  | 'interrupt'
-  | 'close'
-  | 'close_subtree'
-  | 'resume'
-  | 'set_model'
-  | 'set_thinking'
-  | 'set_extensions'
-  | 'set_grants';
+export type LuminariesServicePermission = (typeof LUMINARIES_SERVICE_PERMISSIONS)[number];
 export type ActivationState = 'running' | 'settled' | 'aborted' | 'failed' | 'indeterminate';
 export type PeerEventOrigin = 'agent' | 'operator' | 'service' | 'scheduler' | 'system';
 export type MailboxLane = 'direct' | 'peer' | 'operator' | 'service' | 'system';
@@ -205,6 +192,7 @@ export interface ActivationRecord {
   state: ActivationState;
   inputKind: string;
   startedSeq: number;
+  nativeInputSeq?: number;
   terminalSeq?: number;
 }
 export interface PeerEventRecord {
@@ -509,7 +497,11 @@ export function canContinuePastIndeterminate(
   const agent = state.agents[agentId];
   if (!agent || agent.lifecycle !== 'open' || agent.pendingConfiguration) return false;
   const activationId = indeterminateContinuationActivationId(state, agentId);
-  if (agent.attention && !activationId) return false;
+  const reconciledRuntime =
+    agent.attention?.kind === 'needs_attention' &&
+    agent.attention.code === 'runtime_stale_reconciled' &&
+    !agent.runtimeOwner;
+  if (agent.attention && !activationId && !reconciledRuntime) return false;
   const boundary = agent.continuedAfterSeq ?? 0;
   const evidence = [...Object.values(state.mailbox), ...additionalRecords].filter((record) =>
     isContinuableIndeterminateEvidence(record, agentId, boundary, activationId),
@@ -928,7 +920,7 @@ export function discardActivationBeforeWriteState(
   const consumed = peerMailboxRecords(state).some(
     (event) => event.activationId === activationId && event.consumedSeq !== undefined,
   );
-  if (consumed)
+  if (consumed || activation.nativeInputSeq !== undefined)
     throw new SchedulerStateError(
       'activation_transition',
       `Activation '${activationId}' crossed a model boundary and cannot be discarded`,

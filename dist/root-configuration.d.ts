@@ -1,11 +1,13 @@
+import { type LuminariesServicePermission } from './scheduler-state.ts';
+export type { LuminariesServicePermission } from './scheduler-state.ts';
 export type RootSettingSource = 'built-in' | 'global' | 'trusted-project';
 export type ManagedExtensionState = 'always' | 'allow' | 'deny';
-export type LuminariesServicePermission = 'spawn' | 'directory' | 'message' | 'watch' | 'steer' | 'follow_up' | 'interrupt' | 'close' | 'close_subtree' | 'resume' | 'set_model' | 'set_thinking' | 'set_extensions' | 'set_grants';
 export interface ResolvedManagedExtension {
     specifier: string;
     state: ManagedExtensionState;
     source: RootSettingSource;
     paths: readonly string[];
+    unavailable?: string;
 }
 export interface ManagedExtensionPolicy {
     entries: readonly ResolvedManagedExtension[];
@@ -42,6 +44,7 @@ export interface RootConfigurationHost {
     load(cwd: string, agentDir: string, projectTrusted: boolean): Promise<LoadedPiSettings>;
 }
 export declare function managedExtensionSpecifier(value: unknown, label?: string): string;
+export declare function resolveManagedExtensionEntry(specifier: string, state: ManagedExtensionState, source: RootSettingSource, resolvePaths: LoadedPiSettings['resolveExtension']): Promise<ResolvedManagedExtension>;
 export declare function resolveRootConfiguration(options: {
     cwd: string;
     agentDir: string;
@@ -52,4 +55,3 @@ export declare function resolveManagedExtensionSelection(policy: ManagedExtensio
     extensions: string[];
 };
 export declare function selectedManagedExtensionSpecifiers(policy: ManagedExtensionPolicy, loadedPaths: readonly string[], recordedSources?: readonly string[]): string[];
-export {};

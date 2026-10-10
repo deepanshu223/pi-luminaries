@@ -1,6 +1,6 @@
 import { peerMailboxRecords, } from "./scheduler-state.js";
 export function directInputBoundarySeq(_state, activation) {
-    return activation.inputKind.startsWith('peer_') ? undefined : activation.startedSeq;
+    return activation.inputKind.startsWith('peer_') ? activation.nativeInputSeq : activation.startedSeq;
 }
 export function automaticCausesForActivation(state, activation) {
     return peerMailboxRecords(state)

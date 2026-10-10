@@ -41,7 +41,6 @@ function messagesFromEntries(entries: readonly unknown[]): unknown[] {
 export function captureSpawnCallContext(options: {
   entries: readonly unknown[];
   messages?: readonly unknown[];
-  activeAssistant?: unknown;
   mode?: 'recent' | 'fork';
   requestId: string;
   toolCallId?: string;
@@ -52,7 +51,7 @@ export function captureSpawnCallContext(options: {
     : messagesFromEntries(options.entries);
   let selected = selectedToolCall(messages, options.requestId, options.toolCallId);
   if (!selected) {
-    const candidates = [options.activeAssistant, ...messagesFromEntries(options.entries).reverse()];
+    const candidates = messagesFromEntries(options.entries).reverse();
     const assistant = candidates.find((message) => assistantToolCall(message, options.requestId, options.toolCallId));
     if (!assistant)
       throw new Error(`The exact ${LUMINARIES_IDENTITY.tools.spawn} call is not visible in the current parent context`);
@@ -73,23 +72,19 @@ export function captureSpawnCallContext(options: {
 
 function captureSpawnCallMessage(options: {
   messages: readonly unknown[];
-  activeAssistant?: unknown;
   mode: 'recent' | 'fork';
   requestId: string;
   toolCallId?: string;
 }): ParentContextSnapshot {
   const selected = selectedToolCall(options.messages, options.requestId, options.toolCallId);
-  const toolCallId =
-    selected?.toolCallId ?? assistantToolCall(options.activeAssistant, options.requestId, options.toolCallId);
-  const message = selected ? options.messages[selected.index] : options.activeAssistant;
-  if (!toolCallId || message === undefined)
+  if (!selected)
     throw new Error(`The exact ${LUMINARIES_IDENTITY.tools.spawn} call is not visible in the current Pi context`);
   return captureSpawnCallContext({
     entries: [],
-    messages: [message],
+    messages: [options.messages[selected.index]],
     mode: options.mode,
     requestId: options.requestId,
-    toolCallId,
+    toolCallId: selected.toolCallId,
   });
 }
 
@@ -104,18 +99,6 @@ export function appendSpawnCallContext(messages: readonly unknown[], call: Paren
 }
 
 export class ParentContextTracker {
-  private assistant?: unknown;
-
-  observe(event: unknown): void {
-    if (!isRecord(event) || !('message' in event) || !isRecord(event.message) || event.message.role !== 'assistant')
-      return;
-    this.assistant = structuredClone(event.message);
-  }
-
-  clear(): void {
-    this.assistant = undefined;
-  }
-
   current(sessionManager: ExtensionContext['sessionManager']): ParentContextSnapshot {
     const sourceSessionFile = sessionManager.getSessionFile();
     return {
@@ -135,7 +118,6 @@ export class ParentContextTracker {
     return captureSpawnCallContext({
       entries: branch,
       messages: buildSessionContext(branch).messages,
-      activeAssistant: this.assistant,
       mode,
       requestId,
       toolCallId,
@@ -153,7 +135,6 @@ export class ParentContextTracker {
     return captureSpawnCallContext({
       entries: branch,
       messages: buildSessionContext(branch).messages,
-      activeAssistant: this.assistant,
       mode,
       requestId,
       toolCallId,
@@ -168,7 +149,6 @@ export class ParentContextTracker {
   ): ParentContextSnapshot {
     return captureSpawnCallMessage({
       messages: buildSessionContext(sessionManager.getBranch()).messages,
-      activeAssistant: this.assistant,
       mode,
       requestId,
       toolCallId,

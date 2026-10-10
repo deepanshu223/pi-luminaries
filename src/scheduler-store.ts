@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { CapabilityRequest } from './capability-policy.ts';
 import { LUMINARIES_IDENTITY } from './product-identity.ts';
+import { deriveAgentHandles } from './agent-identity.ts';
 import { emitActivationCompletionState } from './completion-policy.ts';
 import {
   applyOfflineConfigurationState,
@@ -905,6 +906,18 @@ export class SchedulerStore {
       let changed = false;
       for (const agent of Object.values(draft.agents)) {
         if (agent.parentId === null) continue;
+        if (
+          entries.some(
+            (entry) =>
+              !entry.paths.length &&
+              (entry.state === 'always' ||
+                (entry.state === 'allow' &&
+                  (agent.launch.extensionSources?.includes(entry.specifier) ||
+                    (agent.launch.extensionSources === undefined &&
+                      agent.launch.extensions.some((path) => !allowedPaths.has(path)))))),
+          )
+        )
+          continue;
         const selectedSources =
           agent.launch.extensionSources ??
           entries
@@ -994,7 +1007,15 @@ export class SchedulerStore {
     signal?: AbortSignal,
   ): Promise<SchedulerCommit<AgentRecord>> {
     const principal = normalizePrincipal(requestedBy);
-    return this.mutate((draft) => applyOfflineConfigurationState(draft, input, principal), true, signal);
+    return this.mutate(
+      (draft, affectedRecipientIds) => {
+        const result = applyOfflineConfigurationState(draft, input, principal);
+        if (result.changed) affectedRecipientIds.add(result.value.agentId);
+        return result;
+      },
+      true,
+      signal,
+    );
   }
 
   async beginLiveConfiguration(
@@ -1451,6 +1472,18 @@ export class SchedulerStore {
     return this.mutate((draft) => startActivationState(draft, agentId, inputKind));
   }
 
+  async markRootNativeInput(): Promise<SchedulerCommit<ActivationRecord | undefined>> {
+    return this.mutate((draft) => {
+      const activation = Object.values(draft.activations).find(
+        (candidate) => candidate.agentId === draft.root.rootId && candidate.state === 'running',
+      );
+      if (!activation || !activation.inputKind.startsWith('peer_') || activation.nativeInputSeq !== undefined)
+        return { changed: false, value: activation };
+      activation.nativeInputSeq = nextSequence(draft);
+      return { changed: true, value: activation };
+    });
+  }
+
   async finishActivation(
     activationIdInput: string,
     leaseTokenInput: string,
@@ -1522,12 +1555,43 @@ export class SchedulerStore {
         const recordId = id(intent.recordId, 'recordId');
         const runtimeOwner = id(intent.runtimeOwner, 'runtimeOwner');
         return this.mutate<DirectControlRecord | PeerDispatchPlan | undefined>(
-          async (draft) => {
+          async (draft, affectedRecipientIds) => {
             const record = draft.mailbox[recordId];
             if (!record) return { changed: false, value: undefined };
-            return record.lane === 'direct'
-              ? beginDirectControlAttemptState(draft, recordId, runtimeOwner)
-              : beginPeerDeliveryState(draft, recordId, runtimeOwner);
+            const result =
+              record.lane === 'direct'
+                ? beginDirectControlAttemptState(draft, recordId, runtimeOwner)
+                : beginPeerDeliveryState(draft, recordId, runtimeOwner);
+            if (result.changed && record.lane !== 'direct') {
+              const resolution = applyTerminalEventToRequestState(draft, record, randomUUID);
+              if (resolution) affectedRecipientIds.add(resolution.recipientId);
+              if (record.status === 'refused') affectedRecipientIds.add(record.recipientId);
+              if (
+                record.status === 'refused' &&
+                record.outcomeCode === 'target_activation_unavailable' &&
+                record.kind === 'message' &&
+                record.mode === 'default' &&
+                draft.agents[record.senderId]?.lifecycle === 'open'
+              ) {
+                const handles = deriveAgentHandles(
+                  Object.values(draft.agents).map((agent) => ({
+                    agentId: agent.agentId,
+                    displayName: agent.displayName.value,
+                  })),
+                );
+                const notice = acceptSystemEventState(draft, {
+                  dedupeKey: `steer-ended:${record.eventId}`,
+                  type: 'control_failure',
+                  senderId: record.recipientId,
+                  recipientId: record.senderId,
+                  message: `Steer to ${handles.get(record.recipientId) ?? 'the expert'} was not delivered because the turn ended. Use ${LUMINARIES_IDENTITY.tools.message} for ordinary input to start the next turn.`,
+                  traceId: record.traceId,
+                  causationId: record.eventId,
+                });
+                affectedRecipientIds.add(notice.value.event.recipientId);
+              }
+            }
+            return result;
           },
           true,
           signal,
@@ -1628,7 +1692,20 @@ export class SchedulerStore {
             if (record.lane === 'direct') {
               return finishDirectControlState(draft, recordId, attemptId, intent.status, code);
             }
-            const outcome = finishPeerDeliveryState(draft, recordId, attemptId, intent.status, code);
+            const activation = record.activationId ? draft.activations[record.activationId] : undefined;
+            const ownsActivation =
+              record.deliveryKind === 'wake' &&
+              activation?.state === 'running' &&
+              activation.nativeInputSeq === undefined;
+            const outcome = finishPeerDeliveryState(
+              draft,
+              recordId,
+              attemptId,
+              intent.status,
+              ownsActivation && intent.status === 'indeterminate'
+                ? 'recipient_indeterminate_before_peer_consumption'
+                : code,
+            );
             for (const event of outcome.value) {
               const generated = applyTerminalEventToRequestState(draft, event, randomUUID);
               if (generated?.status === 'accepted') affectedRecipientIds.add(generated.recipientId);
@@ -1636,6 +1713,14 @@ export class SchedulerStore {
             const event = outcome.value.find((candidate) => candidate.eventId === recordId);
             if (!event)
               throw new SchedulerStateError('state_invalid', `Peer event '${recordId}' disappeared after settlement`);
+            if (ownsActivation)
+              settleActivationState(
+                draft,
+                activation.activationId,
+                activation.leaseToken,
+                intent.status === 'indeterminate' ? 'indeterminate' : 'failed',
+                affectedRecipientIds,
+              );
             return { changed: outcome.changed, value: event };
           },
           true,

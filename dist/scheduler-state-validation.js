@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { normalizeCapabilityEnvelope, normalizeCapabilityRequest } from "./capability-policy.js";
 import { isLowercaseSha256, isPiSessionId } from "./identifiers.js";
 import { LUMINARIES_IDENTITY } from "./product-identity.js";
-import { DIRECT_CONTROL_STATES, SchedulerStateError, TERMINAL_DIRECT_CONTROL_STATES, TERMINAL_PEER_EVENT_STATUSES, absolutePath, agentDepth, agentPath, exactKeys, humanFacingProse, humanFacingText, humanFacingTextList, id, idList, integer, isCorrelatedRequestStatus, isPeerEventStatus, isRecord, nonemptyText, isStrictAncestor, mailboxActivationIds, normalizeAgentContext, normalizeAgentLaunch, normalizePrincipal, openCollaboratorCount, peerMailboxRecord, peerMailboxRecords, referenceTargetsPrivateState, requestStatus, sha256, text, within, } from "./scheduler-state.js";
+import { DIRECT_CONTROL_STATES, LUMINARIES_SERVICE_PERMISSIONS, SchedulerStateError, TERMINAL_DIRECT_CONTROL_STATES, TERMINAL_PEER_EVENT_STATUSES, absolutePath, agentDepth, agentPath, exactKeys, humanFacingProse, humanFacingText, humanFacingTextList, id, idList, integer, isCorrelatedRequestStatus, isPeerEventStatus, isRecord, nonemptyText, isStrictAncestor, mailboxActivationIds, normalizeAgentContext, normalizeAgentLaunch, normalizePrincipal, openCollaboratorCount, peerMailboxRecord, peerMailboxRecords, referenceTargetsPrivateState, requestStatus, sha256, text, within, } from "./scheduler-state.js";
 const EVENT_ORIGINS = new Set(['agent', 'operator', 'service', 'scheduler', 'system']);
 const EVENT_KINDS = new Set(['message', 'request', 'reply', 'cancel', 'resolution', 'system']);
 const EVENT_MODES = new Set(['default', 'follow_up', 'notify_only']);
@@ -21,21 +21,7 @@ const RESOLUTION_CODES = new Set([
     'recipient_closed',
     'request_timeout',
 ]);
-const SERVICE_PERMISSIONS = new Set([
-    'spawn',
-    'directory',
-    'message',
-    'watch',
-    'steer',
-    'follow_up',
-    'interrupt',
-    'close',
-    'close_subtree',
-    'resume',
-    'set_model',
-    'set_thinking',
-    'set_grants',
-]);
+const SERVICE_PERMISSIONS = new Set(LUMINARIES_SERVICE_PERMISSIONS);
 function optionalId(value, label) {
     return value === undefined ? undefined : id(value, label);
 }
@@ -348,7 +334,7 @@ function validateActivations(state, nextSeq) {
         id(key, 'activation map key');
         if (!isRecord(raw))
             throw new SchedulerStateError('state_invalid', `Activation '${key}' must be an object`);
-        exactKeys(raw, ['activationId', 'agentId', 'leaseToken', 'state', 'inputKind', 'startedSeq', 'terminalSeq'], `activation '${key}'`);
+        exactKeys(raw, ['activationId', 'agentId', 'leaseToken', 'state', 'inputKind', 'startedSeq', 'nativeInputSeq', 'terminalSeq'], `activation '${key}'`);
         if (id(raw.activationId, `${key}.activationId`) !== key)
             throw new SchedulerStateError('state_invalid', `Activation '${key}' identity is inconsistent`);
         const agentId = id(raw.agentId, `${key}.agentId`);
@@ -365,9 +351,13 @@ function validateActivations(state, nextSeq) {
         text(raw.inputKind, `${key}.inputKind`, 32);
         const startedSeq = integer(raw.startedSeq, 1, nextSeq - 1, `${key}.startedSeq`);
         const terminalSeq = optionalSequence(raw.terminalSeq, startedSeq, nextSeq, `${key}.terminalSeq`);
+        const nativeInputSeq = optionalSequence(raw.nativeInputSeq, startedSeq, nextSeq, `${key}.nativeInputSeq`);
+        if (nativeInputSeq !== undefined &&
+            (agentId !== state.root.rootId || (terminalSeq !== undefined && nativeInputSeq > terminalSeq)))
+            throw new SchedulerStateError('state_invalid', `Activation '${key}' native input evidence is inconsistent`);
         if ((raw.state === 'running') !== (terminalSeq === undefined))
             throw new SchedulerStateError('state_invalid', `Activation '${key}' terminal evidence is inconsistent`);
-        maximumSeq = Math.max(maximumSeq, startedSeq, terminalSeq ?? 0);
+        maximumSeq = Math.max(maximumSeq, startedSeq, nativeInputSeq ?? 0, terminalSeq ?? 0);
         if (raw.state === 'running') {
             if (running.has(agentId) || agent.lifecycle !== 'open')
                 throw new SchedulerStateError('state_invalid', `Activation '${key}' running state is inconsistent`);

@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hostname } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { atomicReplacePrivateFile } from './atomic-file.ts';
-import type { LuminariesCommandCenterHost } from './command-center.ts';
+import type { LuminariesCommandCenterHost, LuminariesEditableCard } from './command-center.ts';
 import type { LuminariesCommandCenterAgent, LuminariesCommandCenterProjection } from './command-center-projection.ts';
 import type { LuminariesConversationReset, LuminariesConversationUpdate } from './agent-conversations.ts';
 import type { LuminariesToolName, LuminariesToolResult } from './luminaries-tools.ts';
@@ -21,6 +21,7 @@ const ATTACHMENT_PATH = '/v1/attachment';
 const ATTACHMENT_TARGET_PATH = `${ATTACHMENT_PATH}/target`;
 const ATTACHMENT_HISTORY_PATH = `${ATTACHMENT_PATH}/history`;
 const ATTACHMENT_SESSIONS_PATH = `${ATTACHMENT_PATH}/sessions`;
+const ATTACHMENT_CARD_PATH = `${ATTACHMENT_PATH}/card`;
 const ATTACHMENT_ACK_PATH = `${ATTACHMENT_PATH}/ack`;
 const ATTACHMENT_RECEIPT_DIRECTORY = 'attachment-receipts';
 const MAX_DESCRIPTOR_BYTES = 16 * 1024;
@@ -237,6 +238,7 @@ export class LuminariesAttachmentServer {
       url.pathname !== ATTACHMENT_TARGET_PATH &&
       url.pathname !== ATTACHMENT_HISTORY_PATH &&
       url.pathname !== ATTACHMENT_SESSIONS_PATH &&
+      url.pathname !== ATTACHMENT_CARD_PATH &&
       url.pathname !== ATTACHMENT_ACK_PATH
     )
       return false;
@@ -268,6 +270,19 @@ export class LuminariesAttachmentServer {
     }
     if (request.method === 'GET' && url.pathname === ATTACHMENT_HISTORY_PATH && !url.search) {
       this.reply(response, 200, { ok: true, value: await this.host.operatorClosedHistory() });
+      return true;
+    }
+    if (request.method === 'GET' && url.pathname === ATTACHMENT_CARD_PATH) {
+      const agentId = url.searchParams.get('agentId');
+      if (!agentId || [...url.searchParams.keys()].length !== 1) {
+        this.reply(response, 400, { ok: false, message: 'Expert card target is missing or malformed' });
+      } else {
+        try {
+          this.reply(response, 200, { ok: true, value: await this.host.operatorExpertCard(agentId) });
+        } catch (error) {
+          this.reply(response, 404, { ok: false, message: error instanceof Error ? error.message : String(error) });
+        }
+      }
       return true;
     }
     if (request.method === 'GET' && url.pathname === ATTACHMENT_SESSIONS_PATH) {
@@ -877,6 +892,41 @@ export class LuminariesAttachmentClient implements LuminariesCommandCenterHost {
 
   async operatorResume(agentId: string): Promise<void> {
     await this.mutate({ action: 'resume', agentId });
+  }
+  async operatorExpertCard(agentId: string): Promise<LuminariesEditableCard> {
+    if (this.offlineReason) throw new Error(this.offlineReason);
+    const url = new URL(this.descriptor.url);
+    url.pathname = ATTACHMENT_CARD_PATH;
+    url.search = new URLSearchParams({ agentId }).toString();
+    const response = await fetch(url, {
+      signal: this.abort.signal,
+      redirect: 'manual',
+      headers: { authorization: `Bearer ${this.descriptor.token}` },
+    });
+    if (isRedirect(response.status)) throw new Error('Attachment endpoint redirected; refusing the new destination');
+    const result: unknown = JSON.parse(await response.text());
+    if (!response.ok || !isRecord(result) || result.ok !== true || !isRecord(result.value))
+      throw new Error('Expert card is unavailable');
+    const card = result.value;
+    if (
+      typeof card.displayName !== 'string' ||
+      typeof card.role !== 'string' ||
+      typeof card.focus !== 'string' ||
+      typeof card.assignment !== 'string' ||
+      typeof card.ownershipBoundary !== 'string' ||
+      !isStringArray(card.expertise) ||
+      !isStringArray(card.publishedRefs)
+    )
+      throw new Error('Attachment expert card response is invalid');
+    return {
+      displayName: card.displayName,
+      role: card.role,
+      focus: card.focus,
+      assignment: card.assignment,
+      ownershipBoundary: card.ownershipBoundary,
+      expertise: card.expertise,
+      publishedRefs: card.publishedRefs,
+    };
   }
 
   attachmentInvocation(): string {

@@ -3,6 +3,24 @@ import { LUMINARIES_IDENTITY } from './product-identity.ts';
 
 export const PUBLIC_RESULT_BYTES = 48 * 1024;
 
+export function receiptWireBytes(
+  toolCallId: string,
+  message: string,
+  details: Readonly<Record<string, unknown>>,
+  terminate = false,
+): number {
+  return (
+    Buffer.byteLength(
+      JSON.stringify({
+        v: 1,
+        ok: true,
+        toolCallId,
+        result: { message, details, ...(terminate ? { terminate: true } : {}) },
+      }),
+    ) + 1
+  );
+}
+
 export interface ProjectionCursorScope {
   rootId: string;
   callerId: string;
@@ -14,15 +32,6 @@ export interface ProjectionCursorScope {
 interface ProjectionCursor extends ProjectionCursorScope {
   v: 1;
   key: string;
-}
-
-export interface BytePage<T> {
-  items: readonly T[];
-  nextCursor?: string;
-  remaining: number;
-  returned: number;
-  requestedLimit: number;
-  measuredBytes: number;
 }
 
 function cursorError(): SchedulerStateError {
@@ -89,7 +98,7 @@ export function buildBytePage<T>(options: {
   scope: ProjectionCursorScope;
   buildDetails: (items: readonly T[], nextCursor: string | undefined, remaining: number) => Record<string, unknown>;
   measureDetails: (details: Readonly<Record<string, unknown>>) => number;
-}): BytePage<T> {
+}): Record<string, unknown> {
   const start =
     options.afterKey === undefined
       ? 0
@@ -113,14 +122,7 @@ export function buildBytePage<T>(options: {
           'result_bound',
           `The ${String(options.scope.view)} view cannot fit its first item within ${PUBLIC_RESULT_BYTES} bytes. Retry with a narrower view or fresh page.`,
         );
-      return {
-        items: pageItems,
-        ...(nextCursor ? { nextCursor } : {}),
-        remaining,
-        returned: count,
-        requestedLimit: options.requestedLimit,
-        measuredBytes,
-      };
+      return details;
     }
   }
   throw new SchedulerStateError(

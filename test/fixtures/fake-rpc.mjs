@@ -3,7 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 const decoder = new StringDecoder('utf8');
 let buffer = '';
 const mode = process.env.FAKE_RPC_MODE ?? 'normal';
-process.stderr.write(process.env.FAKE_STDERR ?? 'fake diagnostic\n');
+process.stderr.write('fake diagnostic\n');
 function response(id, data = {}, success = true, error) {
   process.stdout.write(JSON.stringify({ type: 'response', id, success, ...(success ? data : { error }) }) + '\n');
 }
@@ -13,7 +13,6 @@ function handle(value) {
     setTimeout(() => process.exit(23), 5);
     return;
   }
-  if (mode === 'ignore') return;
   if (mode === 'malformed') {
     process.stdout.write('{not-json}\n');
     return;
@@ -28,10 +27,6 @@ function handle(value) {
     );
     return;
   }
-  if (operation === 'response-only') {
-    response(value.id, { accepted: true });
-    return;
-  }
   if (operation === 'environment') {
     response(value.id, {
       inheritedPath: typeof process.env.PATH === 'string',
@@ -40,9 +35,6 @@ function handle(value) {
       parentProvider: process.env.PI_PROVIDER ?? null,
       parentModel: process.env.PI_MODEL ?? null,
       parentReasoning: process.env.PI_REASONING_LEVEL ?? null,
-      appendSystem: process.env.APPEND_SYSTEM ?? null,
-      piAppendSystem: process.env.PI_APPEND_SYSTEM ?? null,
-      piSystemPrompt: process.env.PI_SYSTEM_PROMPT ?? null,
     });
     return;
   }
@@ -54,34 +46,6 @@ function handle(value) {
         cwd: process.env.FAKE_CWD,
       },
     });
-    return;
-  }
-  if (operation === 'settle') {
-    process.stdout.write(JSON.stringify({ type: 'agent_start', reason: 'fixture' }) + '\n');
-    process.stdout.write(JSON.stringify({ type: 'agent_settled', reason: 'fixture' }) + '\n');
-    response(value.id, { data: { ok: true }, ok: true });
-    return;
-  }
-  if (operation === 'oversized-summaries') {
-    process.stdout.write(JSON.stringify({ type: 'agent_start', reason: 'fixture' }) + '\n');
-    const message = { role: 'assistant', content: [{ type: 'text', text: 'Inspecting five images.' }] };
-    const toolResults = Array.from({ length: 5 }, (_, index) => ({
-      role: 'toolResult',
-      toolCallId: `image-${index}`,
-      toolName: 'read',
-      content: [{ type: 'image', data: 'A'.repeat(300 * 1024), mimeType: 'image/png' }],
-    }));
-    for (const entry of [message, ...toolResults])
-      process.stdout.write(JSON.stringify({ type: 'message_end', message: entry }) + '\n');
-    process.stdout.write(JSON.stringify({ type: 'turn_end', message, toolResults }) + '\n');
-    process.stdout.write(JSON.stringify({ type: 'agent_end', messages: [message, ...toolResults] }) + '\n');
-    process.stdout.write(JSON.stringify({ type: 'agent_settled', reason: 'fixture' }) + '\n');
-    response(value.id, { data: { ok: true }, ok: true });
-    return;
-  }
-  if (operation === 'stale-settle') {
-    process.stdout.write(JSON.stringify({ type: 'agent_settled', reason: 'stale' }) + '\n');
-    response(value.id, { ok: true });
     return;
   }
   if (operation === 'native-media') {

@@ -1,4 +1,4 @@
-import { readdir, realpath, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +34,8 @@ import { sanitizeDisplayText } from './display-sanitizer.ts';
 import {
   managedExtensionSpecifier,
   resolveRootConfiguration,
+  resolveManagedExtensionEntry,
+  type RootSettingSource,
   type ManagedExtensionHost,
   type ManagedExtensionPolicy,
   type ManagedExtensionSource,
@@ -175,7 +177,7 @@ export default function luminariesExtension(pi: ExtensionAPI, configurationHost?
           (error.owner.hostname !== hostname() || error.owner.pid !== process.pid)
         )
           throw new Error(
-            `${LUMINARIES_IDENTITY.label} is already active for this saved Pi session in another Pi process. Run this exact command:\n${attachmentInvocation}\nOr retry after that owner closes. Other Pi sessions remain independent.`,
+            `${LUMINARIES_IDENTITY.label} cannot prove the previous owner of this saved Pi session has exited (PID ${error.owner.pid} on ${error.owner.hostname}). If that Pi owner is still running, attach with:\n${attachmentInvocation}\nIf the PID now belongs to an unrelated process, do not stop it. Retry with process-creation lookup available; preserve the private state and writer fence if ownership remains uncertain. Other Pi sessions remain independent.`,
             { cause: error },
           );
         if (error instanceof FileLeaseConflictError)
@@ -257,11 +259,9 @@ export default function luminariesExtension(pi: ExtensionAPI, configurationHost?
   }
   pi.registerMessageRenderer(LUMINARIES_IDENTITY.namespace.protocolMessageType, renderLuminariesProtocolMessage);
   pi.on('message_end', (event) => {
-    parentContext.observe(event.message);
     if (manager) manager.parentMessageEnd(event.message);
   });
   pi.on('message_update', (event) => {
-    parentContext.observe(event.message);
     if (manager) manager.parentMessageUpdate(event);
   });
   pi.on('tool_execution_start', (event) => {
@@ -493,7 +493,6 @@ export default function luminariesExtension(pi: ExtensionAPI, configurationHost?
   pi.on('model_select', async (_event, context) => refreshRootHostFacts(context));
   pi.on('thinking_level_select', async (_event, context) => refreshRootHostFacts(context));
   pi.on('before_agent_start', async (event, context) => {
-    parentContext.clear();
     parentTurn = { prompt: event.prompt, agentStarted: false };
     ownerContext = context;
     const current = manager;
@@ -514,7 +513,6 @@ export default function luminariesExtension(pi: ExtensionAPI, configurationHost?
     } else void context;
   });
   pi.on('message_start', async (event) => {
-    parentContext.observe(event.message);
     if (manager) await manager.parentMessageStart(event.message);
   });
   pi.on('agent_settled', async (_event, _context) => {
@@ -547,7 +545,6 @@ function modelDescriptor(value: PiModel, pinnedThinking?: string): ModelDescript
     provider: value.provider,
     id: value.id,
     contextWindow: value.contextWindow,
-    maxOutputTokens: value.maxTokens,
     reasoning: value.reasoning,
     ...(thinkingLevel ? { thinkingLevel } : {}),
   };
@@ -647,6 +644,17 @@ function isSha256(value: string): boolean {
   for (const character of value) if (!'0123456789abcdef'.includes(character)) return false;
   return true;
 }
+async function resolvePiExtensionPaths(
+  packages: DefaultPackageManager,
+  specifier: string,
+  source: RootSettingSource,
+): Promise<readonly string[]> {
+  const resolved = await packages.resolveExtensionSources([specifier], {
+    ...(source === 'trusted-project' ? { local: true } : {}),
+  });
+  return resolved.extensions.filter((entry) => entry.enabled).map((entry) => entry.path);
+}
+
 function piRootConfigurationHost(): RootConfigurationHost {
   return {
     async load(cwd, agentDir, projectTrusted) {
@@ -657,12 +665,7 @@ function piRootConfigurationHost(): RootConfigurationHost {
       return {
         global: settings.getGlobalSettings(),
         project: settings.getProjectSettings(),
-        async resolveExtension(specifier, source) {
-          const resolved = await packages.resolveExtensionSources([specifier], {
-            ...(source === 'trusted-project' ? { local: true } : {}),
-          });
-          return resolved.extensions.filter((entry) => entry.enabled).map((entry) => entry.path);
-        },
+        resolveExtension: (specifier, source) => resolvePiExtensionPaths(packages, specifier, source),
       };
     },
   };
@@ -688,22 +691,9 @@ function piManagedExtensionHost(
     const projectPath = projectTrusted && (settings.getProjectSettings().extensions ?? []).includes(specifier);
     const source =
       configured?.scope === 'project' || projectPath ? 'trusted-project' : (startupEntry?.source ?? 'global');
-    if (state === 'deny') return { specifier, state, source, paths: [] };
-    if (startupEntry?.paths.length) return { ...startupEntry, state };
-    const resolved = await packages.resolveExtensionSources([specifier], {
-      ...(source === 'trusted-project' ? { local: true } : {}),
-    });
-    const paths = [
-      ...new Set(
-        await Promise.all(
-          resolved.extensions
-            .filter((entry) => entry.enabled)
-            .map(async (entry) => resolve(await realpath(entry.path))),
-        ),
-      ),
-    ].sort();
-    if (!paths.length) throw new Error(`Pi extension '${specifier}' resolved no loadable extensions`);
-    return { specifier, state, source, paths };
+    return resolveManagedExtensionEntry(specifier, state, source, (specifier, source) =>
+      resolvePiExtensionPaths(packages, specifier, source),
+    );
   };
   const resolvePolicy = async (
     states: Readonly<Record<string, ManagedExtensionState>>,

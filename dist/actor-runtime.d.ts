@@ -36,6 +36,8 @@ export declare class DurablePiActor implements DeliveryPort {
     private failure?;
     private recoveryRequired;
     private parkAfterSettlement?;
+    private pendingInput?;
+    private queueReset?;
     private constructor();
     static start(options: DurablePiActorOptions): Promise<DurablePiActor>;
     get activityEvents(): readonly unknown[];

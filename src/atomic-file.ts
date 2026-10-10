@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { open, mkdir, lstat, realpath, rename, rm, readdir, readFile, stat } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { isLuminariesId, isUuid } from './identifiers.ts';
+import { isUuid } from './identifiers.ts';
 import { processAlive } from './process-liveness.ts';
 
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
@@ -17,6 +19,7 @@ const MAX_STALE_TEMPS = 16;
 const MAX_RETAINED_TOMBSTONES = 8;
 const reservedNamespaces = new Set<string>();
 const runtimeStartIdentity = `runtime:${Math.round(Date.now() - process.uptime() * 1000)}`;
+const executeFile = promisify(execFile);
 
 export type AtomicWriteData = string | Uint8Array;
 export type AtomicWritePhase = 'temp-synced' | 'renamed' | 'directory-synced';
@@ -55,8 +58,6 @@ export interface PrivateFileLease {
   readonly statePath: string;
   readonly lockPath: string;
   readonly owner: FileLeaseOwner;
-  replace(data: AtomicWriteData, options?: AtomicWriteOptions): Promise<AtomicWriteResult>;
-  replaceSibling(suffix: string, data: AtomicWriteData, options?: AtomicWriteOptions): Promise<AtomicWriteResult>;
   release(): Promise<boolean>;
 }
 export class FileLeaseConflictError extends Error {
@@ -237,6 +238,38 @@ export async function atomicReplacePrivateFile(
 }
 
 async function processStartIdentity(pid: number): Promise<string | undefined> {
+  if (process.platform === 'win32') {
+    try {
+      const { stdout } = await executeFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' -ErrorAction Stop).CreationDate.ToUniversalTime().Ticks`,
+        ],
+        { windowsHide: true, timeout: 5_000, encoding: 'utf8' },
+      );
+      const ticks = stdout.trim();
+      if (ticks && [...ticks].every((character) => character >= '0' && character <= '9')) return `win32:${ticks}`;
+    } catch {
+      /* Unknown process incarnation must retain the writer fence. */
+    }
+    return undefined;
+  }
+  if (process.platform === 'darwin') {
+    try {
+      const { stdout } = await executeFile('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
+        env: { ...process.env, LC_ALL: 'C' },
+        timeout: 5_000,
+        encoding: 'utf8',
+      });
+      const startedAtMs = Date.parse(stdout.trim());
+      return Number.isFinite(startedAtMs) ? `darwin:${startedAtMs}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
   if (process.platform !== 'linux') return pid === process.pid ? runtimeStartIdentity : undefined;
   try {
     const raw = await readFile(`/proc/${pid}/stat`, 'utf8');
@@ -296,9 +329,20 @@ async function demonstrablyDead(owner: FileLeaseOwner): Promise<boolean> {
   if (owner.hostname !== hostname()) return false;
   const alive = processAlive(owner.pid);
   if (alive === false) return true;
-  if (alive !== true || !owner.processStartIdentity) return false;
+  if (alive !== true) return false;
   const current = await processStartIdentity(owner.pid);
-  return current !== undefined && current !== owner.processStartIdentity;
+  if (current?.startsWith('win32:')) {
+    const startedAtMs = (BigInt(current.slice(6)) - 621355968000000000n) / 10000n;
+    // Windows timestamp APIs can differ in precision; only a birth after lease acquisition proves PID reuse.
+    return startedAtMs > BigInt(owner.acquiredAtMs);
+  }
+  if (current?.startsWith('darwin:') && Number(current.slice(7)) > owner.acquiredAtMs) return true;
+  return (
+    current !== undefined &&
+    owner.processStartIdentity !== undefined &&
+    current.split(':')[0] === owner.processStartIdentity.split(':')[0] &&
+    current !== owner.processStartIdentity
+  );
 }
 
 async function releaseOwnedLock(lockPath: string, token: string, hooks: FileLeaseHooks = {}): Promise<boolean> {
@@ -503,30 +547,10 @@ export async function acquirePrivateFileLease(
     if (!acquired) throw new FileLeaseConflictError(`Private state lease could not be acquired: ${canonical.path}`);
     await inspectBoundedArtifacts(canonical.path);
     let resourceClosing = false;
-    async function assertOwnership(): Promise<void> {
-      const current = await readOwner(lockPath);
-      if (!current || current.token !== owner.token)
-        throw new FileLeaseConflictError(`Private state lease ownership changed: ${canonical.path}`, current);
-    }
-    async function runOwned<T>(operation: () => Promise<T>): Promise<T> {
-      if (resourceClosing) throw new Error('Private state lease is closing or released');
-      await assertOwnership();
-      if (resourceClosing) throw new Error('Private state lease is closing or released');
-      return operation();
-    }
     return {
       statePath: canonical.path,
       lockPath,
       owner,
-      replace(data, options) {
-        return runOwned(() => atomicReplacePrivateFile(canonical.path, data, options));
-      },
-      replaceSibling(suffix, data, options) {
-        const normalized = suffix.toLowerCase();
-        if (!isLuminariesId(suffix) || normalized === 'lock' || normalized.startsWith('lock.'))
-          return Promise.reject(new TypeError('Private state sibling suffix is invalid or reserved'));
-        return runOwned(() => atomicReplacePrivateFile(`${canonical.path}.${suffix}`, data, options));
-      },
       async release() {
         if (resourceClosing) return false;
         resourceClosing = true;

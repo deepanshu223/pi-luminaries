@@ -3,6 +3,7 @@ import { hostname } from 'node:os';
 import { applyAssistantStreamEvent, assistantSnapshotEvent, type AssistantStreamState } from './assistant-stream.ts';
 import { childInputCommand } from './child-input.ts';
 import { ModelBoundaryTracker } from './model-boundary-tracker.ts';
+import { LUMINARIES_IDENTITY } from './product-identity.ts';
 import {
   PiRpcCommandError,
   PiRpcProcess,
@@ -72,10 +73,6 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function responseWasRefused(response: RpcResponse): boolean {
-  return isRecord(response.data) && response.data.accepted === false;
-}
-
 function cancelledExtensionUiRequest(value: unknown): CancelledExtensionUiRequest | undefined {
   const record = recordOf(value);
   if (!record || typeof record.id !== 'string' || typeof record.title !== 'string') return undefined;
@@ -104,6 +101,8 @@ export class DurablePiActor implements DeliveryPort {
   private failure?: Error;
   private recoveryRequired = false;
   private parkAfterSettlement?: () => void;
+  private pendingInput?: { response: Promise<RpcResponse>; failure?: PiRpcCommandError };
+  private queueReset?: Promise<void>;
 
   private constructor(options: DurablePiActorOptions, rpc: PiRpcProcess, sessionFile: string, runtimeOwner: string) {
     this.agentId = options.agentId;
@@ -226,7 +225,6 @@ export class DurablePiActor implements DeliveryPort {
         invocation: launch.invocation,
         cwd: launch.cwd,
         env: options.env,
-        unsetEnv: agent.launch.noContextFiles ? ['APPEND_SYSTEM', 'PI_APPEND_SYSTEM', 'PI_SYSTEM_PROMPT'] : undefined,
         limits: options.limits,
         requestTimeoutMs: timeoutMs,
       });
@@ -326,6 +324,11 @@ export class DurablePiActor implements DeliveryPort {
 
   deliver(plan: PeerDispatchPlan): PiDeliveryAttempt {
     this.assertUsable();
+    if (this.queueReset)
+      throw new SchedulerStateError(
+        'delivery_race',
+        `Agent '${this.agentId}' is withdrawing queued input before settlement`,
+      );
     if (plan.recipientId !== this.agentId || plan.targetRuntimeOwner !== this.runtimeOwner)
       throw new SchedulerStateError('runtime_owner', `Delivery plan does not belong to '${this.agentId}'`);
     let turn: RuntimeTurn;
@@ -340,13 +343,17 @@ export class DurablePiActor implements DeliveryPort {
       turn = this.current;
     }
     const boundary = this.boundaries.observe(plan.attemptId);
-    const response = this.request(this.managedInput(boundary.inputId, plan));
-    const accepted = response.then((value) => {
-      if (responseWasRefused(value))
-        throw plan.deliveryKind === 'wake'
-          ? new PiRpcCommandError('prompt', 'Pi refused managed input')
-          : new SchedulerStateError('delivery_race', `Agent '${this.agentId}' settled before queued input admission`);
-    });
+    const pending: { response: Promise<RpcResponse>; failure?: PiRpcCommandError } = {
+      response: this.request(this.managedInput(boundary.inputId, plan)),
+    };
+    this.pendingInput = pending;
+    const accepted = pending.response
+      .then(() => {
+        if (pending.failure) throw pending.failure;
+      })
+      .finally(() => {
+        if (this.pendingInput === pending) this.pendingInput = undefined;
+      });
     void accepted.catch((error) => {
       if (!(error instanceof PiRpcCommandError)) return;
       boundary.cancel();
@@ -379,9 +386,7 @@ export class DurablePiActor implements DeliveryPort {
     if (!turn) throw new SchedulerStateError('runtime_unavailable', `Agent '${this.agentId}' has no running turn`);
     const boundary = this.boundaries.observeInterrupt(inputId);
     const response = this.request({ type: 'abort', id: inputId });
-    const accepted = response.then((value) => {
-      if (responseWasRefused(value)) throw new PiRpcCommandError('abort', 'Pi refused interrupt');
-    });
+    const accepted = response.then(() => undefined);
     return {
       accepted,
       settled: turn.done.promise,
@@ -440,6 +445,15 @@ export class DurablePiActor implements DeliveryPort {
   }
 
   private captureRpcEvent(event: unknown): void {
+    if (
+      isRecord(event) &&
+      event.type === 'extension_error' &&
+      event.event === 'command' &&
+      event.extensionPath === `command:${LUMINARIES_IDENTITY.namespace.childInputCommand}` &&
+      typeof event.error === 'string' &&
+      this.pendingInput
+    )
+      this.pendingInput.failure = new PiRpcCommandError('prompt', event.error);
     this.captureActivity(event);
     for (const listener of this.uiChangeListeners) {
       try {
@@ -448,8 +462,29 @@ export class DurablePiActor implements DeliveryPort {
         this.addDiagnostic(errorOf(error));
       }
     }
-    if (this.boundaries.captureEvent(event) && this.current) this.current.abortSeen = true;
-    if (isRecord(event) && event.type === 'agent_settled') this.finishCurrent();
+    if (isRecord(event) && event.type === 'agent_settled' && this.boundaries.hasPendingInput) {
+      const pending = this.pendingInput?.response;
+      const reset = (async () => {
+        // abort leaves custom messages queued; only a successful clear permits safe requeue.
+        await pending?.catch(() => undefined);
+        await this.request({ type: 'clear_queue' });
+        if (this.boundaries.captureEvent(event, true) && this.current) this.current.abortSeen = true;
+        this.finishCurrent();
+      })();
+      this.queueReset = reset;
+      void reset
+        .catch((error: unknown) => {
+          this.recoveryRequired = true;
+          this.boundaries.reject(errorOf(error));
+          this.rejectTurns(errorOf(error));
+        })
+        .finally(() => {
+          if (this.queueReset === reset) this.queueReset = undefined;
+        });
+    } else {
+      if (this.boundaries.captureEvent(event, true) && this.current) this.current.abortSeen = true;
+      if (isRecord(event) && event.type === 'agent_settled') this.finishCurrent();
+    }
   }
 
   private finishCurrent(): void {

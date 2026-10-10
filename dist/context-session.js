@@ -1,12 +1,13 @@
+import { convertToLlm } from '@earendil-works/pi-coding-agent';
 import { isRecord } from "./scheduler-state.js";
-import { estimatePiSessionMessages } from "./pi-session-host.js";
+import { estimatePiSessionMessages, isPiSessionMessage } from "./pi-session-host.js";
 const DEFAULT_RECENT_TOKENS = 16_000;
 function groups(messages) {
     const result = [];
     let current = [];
     for (const message of messages) {
-        const role = isRecord(message) && typeof message.role === 'string' ? message.role : undefined;
-        if (role === 'user' && current.length) {
+        const startsTurn = isPiSessionMessage(message) && convertToLlm([message]).some((part) => part.role === 'user');
+        if (startsTurn && current.length) {
             result.push(current);
             current = [];
         }

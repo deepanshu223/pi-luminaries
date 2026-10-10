@@ -92,7 +92,7 @@ function isMessageContent(value: unknown): boolean {
   );
 }
 
-function isPiSessionMessage(value: unknown): value is PiSessionMessage {
+export function isPiSessionMessage(value: unknown): value is PiSessionMessage {
   if (!isRecord(value) || typeof value.role !== 'string' || typeof value.timestamp !== 'number') return false;
   if (value.role === 'system')
     return (

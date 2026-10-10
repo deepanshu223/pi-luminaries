@@ -44,10 +44,10 @@ export class ModelBoundaryTracker {
     return this.add(inputId, true);
   }
 
-  captureEvent(event: unknown): boolean {
+  captureEvent(event: unknown, queuedInputsCleared = false): boolean {
     const inputId = eventInputId(event);
     if (inputId) this.captureInput(inputId);
-    return isRecord(event) && event.type === 'agent_settled' ? this.settle() : false;
+    return isRecord(event) && event.type === 'agent_settled' ? this.settle(queuedInputsCleared) : false;
   }
 
   reject(error: Error): void {
@@ -98,14 +98,21 @@ export class ModelBoundaryTracker {
     pending.resolve(true);
   }
 
-  private settle(): boolean {
+  private settle(queuedInputsCleared: boolean): boolean {
     let interruptSettled = false;
     for (const pending of [...this.pending.values()]) {
       if (pending.finished) continue;
       if (!pending.abort) {
         pending.finished = true;
         this.pending.delete(pending.inputId);
-        pending.resolve(false);
+        if (queuedInputsCleared) pending.resolve(false);
+        else
+          pending.reject(
+            new SchedulerStateError(
+              'delivery_indeterminate',
+              'Pi settled without proving its queued input was withdrawn',
+            ),
+          );
         continue;
       }
       pending.finished = true;

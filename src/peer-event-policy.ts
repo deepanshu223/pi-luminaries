@@ -349,18 +349,7 @@ export function acceptPeerEventState(
     traceId,
     causationId,
     ...(sourceActivation ? { sourceActivationId: sourceActivation.activationId } : {}),
-    ...(expectedActivationId
-      ? { targetActivationId: expectedActivationId }
-      : afterControlId
-        ? { afterControlId }
-        : request.mode !== 'notify_only'
-          ? (() => {
-              const live = Object.values(state.activations).find(
-                (activation) => activation.agentId === request.recipientId && activation.state === 'running',
-              );
-              return live ? { targetActivationId: live.activationId } : {};
-            })()
-          : {}),
+    ...(expectedActivationId ? { targetActivationId: expectedActivationId } : afterControlId ? { afterControlId } : {}),
     kind: request.kind,
     requestId: request.requestId,
     mode: request.mode,
@@ -491,6 +480,7 @@ export function beginPeerDeliveryState(
       `Peer event recipient '${event.recipientId}' runtime owner does not match`,
     );
   if (recipient.pendingConfiguration) return { changed: false, value: undefined };
+  if (hasDirectInputFence(state, event.recipientId)) return { changed: false, value: undefined };
   if (event.afterControlId) {
     const control = state.mailbox[event.afterControlId];
     if (!control || control.lane !== 'direct' || control.status !== 'aborted')
@@ -526,11 +516,7 @@ export function beginPeerDeliveryState(
   const selected = queue[0];
   if (!selected) return { changed: false, value: undefined };
   const batch = [selected];
-  if (
-    !event.afterControlId &&
-    (runtimeState === 'idle' || runtimeState === 'waiting') &&
-    selected.mode !== 'follow_up'
-  ) {
+  if (!event.afterControlId && (runtimeState === 'idle' || runtimeState === 'waiting')) {
     activation = startActivationState(state, recipient.agentId, 'peer_event').value;
     deliveryKind = 'wake';
   } else if (!event.afterControlId && runtimeState === 'running' && selected.mode === 'follow_up') {
@@ -543,8 +529,6 @@ export function beginPeerDeliveryState(
     deliveryKind = 'steer';
   } else if (!event.afterControlId) return { changed: false, value: undefined };
   if (!activation || !deliveryKind) return { changed: false, value: undefined };
-  if (deliveryKind !== 'wake' && hasDirectInputFence(state, event.recipientId, activation.activationId))
-    return { changed: false, value: undefined };
   beginMailboxAttemptState(state, batch, {
     attemptId: randomUUID(),
     activationId: activation.activationId,
@@ -560,7 +544,7 @@ export function requeuePeerEventBeforeWriteState(
 ): PeerEventPolicyResult<PeerEventRecord> & { discardedWakeActivation?: ActivationRecord } {
   const event = attemptedEvent(state, eventId, attemptId);
   const activation = requiredDeliveryActivation(state, event);
-  const ownsActivation = event.deliveryKind === 'wake';
+  const ownsActivation = event.deliveryKind === 'wake' && activation.nativeInputSeq === undefined;
   const batch = deliveryBatch(state, event);
   if (batch.some((candidate) => candidate.consumedSeq !== undefined)) {
     for (const candidate of batch)
@@ -630,6 +614,10 @@ export function preparePeerEventsForActivationFinishState(
 ): PeerEventRecord[] {
   const terminal: PeerEventRecord[] = [];
   for (const event of peerMailboxRecords(state)) {
+    if (event.mode === 'follow_up' && event.status === 'accepted' && event.targetActivationId === activationId) {
+      delete event.targetActivationId;
+      continue;
+    }
     if (event.activationId !== activationId || TERMINAL_PEER_EVENT_STATUSES.has(event.status)) continue;
     const batch = deliveryBatch(state, event);
     const consumed = batch.every((candidate) => candidate.consumedSeq !== undefined);

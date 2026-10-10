@@ -80,7 +80,9 @@ export class RootRuntime {
         const activation = await this.store.startActivation(this.agentId, 'parent_prompt');
         this.activationId = activation.value.activationId;
     }
-    messageStart(message) {
+    async messageStart(message) {
+        if (isRecord(message) && message.role === 'user')
+            await this.store.markRootNativeInput();
         this.captureEvent({ type: 'message_start', message });
     }
     messageUpdate(event) {
@@ -154,12 +156,13 @@ export class RootRuntime {
             settled: settlement.promise,
             cancelBoundary: (outcome) => {
                 boundary.cancel();
-                if (plan.deliveryKind !== 'wake')
+                const activation = this.store.snapshot().activations[plan.activationId];
+                if (plan.deliveryKind !== 'wake' || activation?.state === 'running')
                     return;
                 settlement.resolve({
                     activationId: plan.activationId,
                     leaseToken: plan.activationLeaseToken,
-                    outcome: outcome === 'known' ? 'failed' : 'indeterminate',
+                    outcome: activation && terminal(activation) ? activation.state : outcome === 'known' ? 'failed' : 'indeterminate',
                 });
                 this.settlements.delete(plan.activationId);
                 if (this.activationId === plan.activationId)

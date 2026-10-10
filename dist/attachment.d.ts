@@ -1,4 +1,4 @@
-import type { LuminariesCommandCenterHost } from './command-center.ts';
+import type { LuminariesCommandCenterHost, LuminariesEditableCard } from './command-center.ts';
 import type { LuminariesCommandCenterAgent, LuminariesCommandCenterProjection } from './command-center-projection.ts';
 import type { LuminariesConversationReset, LuminariesConversationUpdate } from './agent-conversations.ts';
 import type { LuminariesToolName, LuminariesToolResult } from './luminaries-tools.ts';
@@ -149,6 +149,7 @@ export declare class LuminariesAttachmentClient implements LuminariesCommandCent
     }>;
     operatorSetArchived(agentId: string, archived: boolean): Promise<void>;
     operatorResume(agentId: string): Promise<void>;
+    operatorExpertCard(agentId: string): Promise<LuminariesEditableCard>;
     attachmentInvocation(): string;
     operatorModels(): readonly ModelDescriptor[];
     operatorThinkingLevels(): readonly string[];

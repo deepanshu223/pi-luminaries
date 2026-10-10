@@ -13,20 +13,22 @@ export declare class JsonlReader {
     readonly maxRecordBytes: number | undefined;
     readonly maxBufferBytes: number | undefined;
     private readonly decoder;
-    private buffer;
+    private fragments;
+    private recordBytes;
+    private prefix;
     private ended;
     private failed;
     private skippingRecord;
     private readonly onRecord;
     private readonly onError?;
     private readonly skipRecordPrefixes;
+    private readonly prefixLength;
     constructor(onRecord: JsonlRecordHandler, options?: JsonlLimits, onError?: JsonlErrorHandler);
     feed(chunk: Uint8Array | string): void;
     end(): void;
     /** Stop accepting records without reporting a second error. */
     stop(): void;
     private append;
-    private drain;
     private parseRecord;
     private fail;
 }

@@ -9,7 +9,7 @@ export function directInputBoundarySeq(
   _state: Readonly<SchedulerState>,
   activation: Readonly<ActivationRecord>,
 ): number | undefined {
-  return activation.inputKind.startsWith('peer_') ? undefined : activation.startedSeq;
+  return activation.inputKind.startsWith('peer_') ? activation.nativeInputSeq : activation.startedSeq;
 }
 
 export function automaticCausesForActivation(

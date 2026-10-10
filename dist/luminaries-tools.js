@@ -719,9 +719,9 @@ function messageSchema() {
         },
         {
             action: 'reply',
-            extra: { correlationId: stringSchema(128), message: stringSchema() },
+            extra: { correlationId: stringSchema(64), message: stringSchema() },
         },
-        { action: 'cancel', extra: { correlationId: stringSchema(128) } },
+        { action: 'cancel', extra: { correlationId: stringSchema(64) } },
     ]);
 }
 function controlSchema() {

@@ -1,3 +1,4 @@
+import { SessionManager } from '@earendil-works/pi-coding-agent';
 export interface SeededSessionInput {
     sessionId: string;
     sessionDir: string;
@@ -50,7 +51,10 @@ export interface ForkSessionInput {
     contextNote: string;
     destinationName: string;
 }
+type PiSessionMessage = Parameters<SessionManager['appendMessage']>[0];
+export declare function isPiSessionMessage(value: unknown): value is PiSessionMessage;
 /** Estimate context using the same public message accounting Pi uses for compaction. */
 export declare function estimatePiSessionMessages(messages: readonly unknown[]): number;
 /** Lazy supported Pi API adapter; no Pi runtime object is retained across extension replacement. */
 export declare function createPiSessionHost(): PiSessionHost;
+export {};

@@ -1,4 +1,4 @@
-import { readdir, realpath, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +19,7 @@ import { sendLuminariesBuildIdentity } from "./peer-bridge.js";
 import { LUMINARIES_IDENTITY } from "./product-identity.js";
 import { parseChildInput, readChildInputContent } from "./child-input.js";
 import { sanitizeDisplayText } from "./display-sanitizer.js";
-import { managedExtensionSpecifier, resolveRootConfiguration, } from "./root-configuration.js";
+import { managedExtensionSpecifier, resolveRootConfiguration, resolveManagedExtensionEntry, } from "./root-configuration.js";
 const luminariesProcess = process;
 /** Production Pi extension boundary. Factory registration is intentionally resource-free. */
 export default function luminariesExtension(pi, configurationHost) {
@@ -122,7 +122,7 @@ export default function luminariesExtension(pi, configurationHost) {
             error.ownerIsLiveOrIndeterminate &&
             error.owner &&
             (error.owner.hostname !== hostname() || error.owner.pid !== process.pid))
-            throw new Error(`${LUMINARIES_IDENTITY.label} is already active for this saved Pi session in another Pi process. Run this exact command:\n${attachmentInvocation}\nOr retry after that owner closes. Other Pi sessions remain independent.`, { cause: error });
+            throw new Error(`${LUMINARIES_IDENTITY.label} cannot prove the previous owner of this saved Pi session has exited (PID ${error.owner.pid} on ${error.owner.hostname}). If that Pi owner is still running, attach with:\n${attachmentInvocation}\nIf the PID now belongs to an unrelated process, do not stop it. Retry with process-creation lookup available; preserve the private state and writer fence if ownership remains uncertain. Other Pi sessions remain independent.`, { cause: error });
         if (error instanceof FileLeaseConflictError)
             throw new Error(`${LUMINARIES_IDENTITY.label} could not verify exclusive ownership for this saved Pi session. Retry shortly; do not remove private state or start another owner.`, { cause: error });
         throw error;
@@ -201,12 +201,10 @@ export default function luminariesExtension(pi, configurationHost) {
     }
     pi.registerMessageRenderer(LUMINARIES_IDENTITY.namespace.protocolMessageType, renderLuminariesProtocolMessage);
     pi.on('message_end', (event) => {
-        parentContext.observe(event.message);
         if (manager)
             manager.parentMessageEnd(event.message);
     });
     pi.on('message_update', (event) => {
-        parentContext.observe(event.message);
         if (manager)
             manager.parentMessageUpdate(event);
     });
@@ -439,7 +437,6 @@ export default function luminariesExtension(pi, configurationHost) {
     pi.on('model_select', async (_event, context) => refreshRootHostFacts(context));
     pi.on('thinking_level_select', async (_event, context) => refreshRootHostFacts(context));
     pi.on('before_agent_start', async (event, context) => {
-        parentContext.clear();
         parentTurn = { prompt: event.prompt, agentStarted: false };
         ownerContext = context;
         const current = manager;
@@ -466,7 +463,6 @@ export default function luminariesExtension(pi, configurationHost) {
             void context;
     });
     pi.on('message_start', async (event) => {
-        parentContext.observe(event.message);
         if (manager)
             await manager.parentMessageStart(event.message);
     });
@@ -493,7 +489,6 @@ function modelDescriptor(value, pinnedThinking) {
         provider: value.provider,
         id: value.id,
         contextWindow: value.contextWindow,
-        maxOutputTokens: value.maxTokens,
         reasoning: value.reasoning,
         ...(thinkingLevel ? { thinkingLevel } : {}),
     };
@@ -596,6 +591,12 @@ function isSha256(value) {
             return false;
     return true;
 }
+async function resolvePiExtensionPaths(packages, specifier, source) {
+    const resolved = await packages.resolveExtensionSources([specifier], {
+        ...(source === 'trusted-project' ? { local: true } : {}),
+    });
+    return resolved.extensions.filter((entry) => entry.enabled).map((entry) => entry.path);
+}
 function piRootConfigurationHost() {
     return {
         async load(cwd, agentDir, projectTrusted) {
@@ -607,12 +608,7 @@ function piRootConfigurationHost() {
             return {
                 global: settings.getGlobalSettings(),
                 project: settings.getProjectSettings(),
-                async resolveExtension(specifier, source) {
-                    const resolved = await packages.resolveExtensionSources([specifier], {
-                        ...(source === 'trusted-project' ? { local: true } : {}),
-                    });
-                    return resolved.extensions.filter((entry) => entry.enabled).map((entry) => entry.path);
-                },
+                resolveExtension: (specifier, source) => resolvePiExtensionPaths(packages, specifier, source),
             };
         },
     };
@@ -627,21 +623,7 @@ function piManagedExtensionHost(cwd, agentDir, projectTrusted, startup) {
         const configured = configuredSource(specifier);
         const projectPath = projectTrusted && (settings.getProjectSettings().extensions ?? []).includes(specifier);
         const source = configured?.scope === 'project' || projectPath ? 'trusted-project' : (startupEntry?.source ?? 'global');
-        if (state === 'deny')
-            return { specifier, state, source, paths: [] };
-        if (startupEntry?.paths.length)
-            return { ...startupEntry, state };
-        const resolved = await packages.resolveExtensionSources([specifier], {
-            ...(source === 'trusted-project' ? { local: true } : {}),
-        });
-        const paths = [
-            ...new Set(await Promise.all(resolved.extensions
-                .filter((entry) => entry.enabled)
-                .map(async (entry) => resolve(await realpath(entry.path))))),
-        ].sort();
-        if (!paths.length)
-            throw new Error(`Pi extension '${specifier}' resolved no loadable extensions`);
-        return { specifier, state, source, paths };
+        return resolveManagedExtensionEntry(specifier, state, source, (specifier, source) => resolvePiExtensionPaths(packages, specifier, source));
     };
     const resolvePolicy = async (states) => {
         const entries = await Promise.all(Object.entries(states).map(([specifier, state]) => resolveEntry(specifier, state)));

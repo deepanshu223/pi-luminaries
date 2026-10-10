@@ -1,9 +1,9 @@
-import { acquirePrivateFileLease } from '../../src/atomic-file.ts';
+import { acquirePrivateFileLease, atomicReplacePrivateFile } from '../../src/atomic-file.ts';
 
 const [, , statePath, phase, value] = process.argv;
 const lease = await acquirePrivateFileLease(statePath);
 try {
-  await lease.replace(value, {
+  await atomicReplacePrivateFile(statePath, value, {
     hooks: {
       observe: async (observed) => {
         if (observed !== phase) return;

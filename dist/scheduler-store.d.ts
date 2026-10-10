@@ -124,6 +124,7 @@ export declare class SchedulerStore {
     markAgentContinuedAfterIndeterminate(agentIdInput: string, requestedBy: SchedulerPrincipal): Promise<SchedulerCommit<AgentRecord>>;
     setAgentAttention(agentIdInput: string, attention: 'failed' | 'needs_attention', code: string): Promise<SchedulerCommit<AgentRecord>>;
     startActivation(agentIdInput: string, inputKindInput: string): Promise<SchedulerCommit<ActivationRecord>>;
+    markRootNativeInput(): Promise<SchedulerCommit<ActivationRecord | undefined>>;
     finishActivation(activationIdInput: string, leaseTokenInput: string, outcome: Exclude<ActivationState, 'running'>): Promise<SchedulerCommit<ActivationRecord>>;
     finishActivationIfRunning(activationIdInput: string, leaseTokenInput: string, outcome: Exclude<ActivationState, 'running'>): Promise<SchedulerCommit<ActivationRecord | undefined>>;
     applyMailboxIntent(intent: Extract<SchedulerMailboxIntent, {

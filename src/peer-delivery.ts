@@ -216,7 +216,10 @@ export class RecipientDrain {
 
   private async pump(recipientId: string): Promise<void> {
     for (;;) {
-      const progressed = await this.dispatchOne(recipientId);
+      const progressed =
+        recipientId === this.options.store.snapshot().root.rootId
+          ? await this.runRoot(() => this.dispatchOne(recipientId))
+          : await this.dispatchOne(recipientId);
       if (!progressed || this.closing) return;
     }
   }
@@ -283,12 +286,13 @@ export class RecipientDrain {
       } catch (error) {
         const deliveryRace = error instanceof SchedulerStateError && error.code === 'delivery_race';
         const known = deliveryRace || error instanceof PiRpcCommandError;
-        attempt.cancelBoundary(known ? 'known' : 'indeterminate');
         if (deliveryRace) {
           await this.requeueBeforeBoundary(plan, error);
+          attempt.cancelBoundary('known');
           return false;
         }
         await this.failAttempt(plan, errorOf(error), known);
+        attempt.cancelBoundary(known ? 'known' : 'indeterminate');
         return true;
       }
       settlementDeferred = true;
@@ -345,8 +349,8 @@ export class RecipientDrain {
       return;
     }
     if (evidence instanceof Error) {
-      attempt.cancelBoundary('indeterminate');
       await this.failAttempt(plan, evidence, false);
+      attempt.cancelBoundary('indeterminate');
       return;
     }
     if (!evidence) {
@@ -362,8 +366,8 @@ export class RecipientDrain {
         )
       )
         return;
-      attempt.cancelBoundary('known');
       await this.requeueBeforeBoundary(plan, undefined, settlement);
+      attempt.cancelBoundary('known');
       return;
     }
     await this.options.store
@@ -384,31 +388,13 @@ export class RecipientDrain {
       await this.removeDerivedPayload(plan.eventId);
       return;
     }
-    if (plan.deliveryKind === 'wake') {
-      if (refused)
-        await this.options.store.applyMailboxIntent({
-          kind: 'finish_delivery',
-          recordId: plan.eventId,
-          attemptId: plan.attemptId,
-          status: 'failed',
-          outcomeCode: 'pi_refused_input',
-        });
-      const activation = this.options.store.snapshot().activations[plan.activationId];
-      if (activation?.state === 'running')
-        await this.options.store.finishActivationIfRunning(
-          activation.activationId,
-          activation.leaseToken,
-          refused ? 'failed' : 'indeterminate',
-        );
-    } else {
-      await this.options.store.applyMailboxIntent({
-        kind: 'finish_delivery',
-        recordId: plan.eventId,
-        attemptId: plan.attemptId,
-        status: refused ? 'failed' : 'indeterminate',
-        outcomeCode: refused ? 'pi_refused_input' : 'pi_input_unconfirmed',
-      });
-    }
+    await this.options.store.applyMailboxIntent({
+      kind: 'finish_delivery',
+      recordId: plan.eventId,
+      attemptId: plan.attemptId,
+      status: refused ? 'failed' : 'indeterminate',
+      outcomeCode: refused ? 'pi_refused_input' : 'pi_input_unconfirmed',
+    });
     await this.removeDerivedPayload(plan.eventId);
     this.addDiagnostic(error);
   }

@@ -16,7 +16,7 @@ function isMessageContent(value) {
     return (typeof value === 'string' ||
         (Array.isArray(value) && value.every((part) => isRecord(part) && typeof part.type === 'string')));
 }
-function isPiSessionMessage(value) {
+export function isPiSessionMessage(value) {
     if (!isRecord(value) || typeof value.role !== 'string' || typeof value.timestamp !== 'number')
         return false;
     if (value.role === 'system')

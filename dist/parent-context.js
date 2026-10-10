@@ -34,7 +34,7 @@ export function captureSpawnCallContext(options) {
         : messagesFromEntries(options.entries);
     let selected = selectedToolCall(messages, options.requestId, options.toolCallId);
     if (!selected) {
-        const candidates = [options.activeAssistant, ...messagesFromEntries(options.entries).reverse()];
+        const candidates = messagesFromEntries(options.entries).reverse();
         const assistant = candidates.find((message) => assistantToolCall(message, options.requestId, options.toolCallId));
         if (!assistant)
             throw new Error(`The exact ${LUMINARIES_IDENTITY.tools.spawn} call is not visible in the current parent context`);
@@ -54,16 +54,14 @@ export function captureSpawnCallContext(options) {
 }
 function captureSpawnCallMessage(options) {
     const selected = selectedToolCall(options.messages, options.requestId, options.toolCallId);
-    const toolCallId = selected?.toolCallId ?? assistantToolCall(options.activeAssistant, options.requestId, options.toolCallId);
-    const message = selected ? options.messages[selected.index] : options.activeAssistant;
-    if (!toolCallId || message === undefined)
+    if (!selected)
         throw new Error(`The exact ${LUMINARIES_IDENTITY.tools.spawn} call is not visible in the current Pi context`);
     return captureSpawnCallContext({
         entries: [],
-        messages: [message],
+        messages: [options.messages[selected.index]],
         mode: options.mode,
         requestId: options.requestId,
-        toolCallId,
+        toolCallId: selected.toolCallId,
     });
 }
 export function appendSpawnCallContext(messages, call) {
@@ -76,15 +74,6 @@ export function appendSpawnCallContext(messages, call) {
     return [...before, ...call.messages, ...after].map((message) => structuredClone(message));
 }
 export class ParentContextTracker {
-    assistant;
-    observe(event) {
-        if (!isRecord(event) || !('message' in event) || !isRecord(event.message) || event.message.role !== 'assistant')
-            return;
-        this.assistant = structuredClone(event.message);
-    }
-    clear() {
-        this.assistant = undefined;
-    }
     current(sessionManager) {
         const sourceSessionFile = sessionManager.getSessionFile();
         return {
@@ -98,7 +87,6 @@ export class ParentContextTracker {
         return captureSpawnCallContext({
             entries: branch,
             messages: buildSessionContext(branch).messages,
-            activeAssistant: this.assistant,
             mode,
             requestId,
             toolCallId,
@@ -110,7 +98,6 @@ export class ParentContextTracker {
         return captureSpawnCallContext({
             entries: branch,
             messages: buildSessionContext(branch).messages,
-            activeAssistant: this.assistant,
             mode,
             requestId,
             toolCallId,
@@ -119,7 +106,6 @@ export class ParentContextTracker {
     call(mode, requestId, toolCallId, sessionManager) {
         return captureSpawnCallMessage({
             messages: buildSessionContext(sessionManager.getBranch()).messages,
-            activeAssistant: this.assistant,
             mode,
             requestId,
             toolCallId,

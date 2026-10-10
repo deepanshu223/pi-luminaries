@@ -9,7 +9,7 @@ export declare class ModelBoundaryTracker {
     get hasPendingInput(): boolean;
     observe(inputId: string): ModelBoundaryWait;
     observeInterrupt(inputId: string): ModelBoundaryWait;
-    captureEvent(event: unknown): boolean;
+    captureEvent(event: unknown, queuedInputsCleared?: boolean): boolean;
     reject(error: Error): void;
     private add;
     private captureInput;

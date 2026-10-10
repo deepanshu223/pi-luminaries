@@ -146,8 +146,26 @@ function structuredValue(value, privatePaths) {
     return result;
 }
 function nativeMessage(value, role, privatePaths) {
-    const sanitized = structuredValue(value, privatePaths);
-    return isRecord(sanitized) ? { ...sanitized, role } : { role };
+    const sanitized = {};
+    for (const [key, item] of Object.entries(value)) {
+        sanitized[key] =
+            key === 'content' && Array.isArray(item)
+                ? item.map((part) => {
+                    if (!isRecord(part) ||
+                        part.type !== 'image' ||
+                        typeof part.data !== 'string' ||
+                        typeof part.mimeType !== 'string')
+                        return structuredValue(part, privatePaths);
+                    return Object.fromEntries(Object.entries(part).map(([key, item]) => [
+                        key,
+                        key === 'data' ? item : isDisplaySecretKey(key) ? '[secret]' : structuredValue(item, privatePaths),
+                    ]));
+                })
+                : isDisplaySecretKey(key)
+                    ? '[secret]'
+                    : structuredValue(item, privatePaths);
+    }
+    return { ...sanitized, role };
 }
 function attributedUserMessage(label, value, privatePaths) {
     const text = structuredString(value, privatePaths);
@@ -653,17 +671,15 @@ export function projectCommandCenter(state, actors = new Map(), uiRevision = sta
             maxDepth: state.root.maxDepth,
             namePoolSource: rootConfiguration?.sources.agentNames ?? (state.root.agentNames ? 'configured' : 'built-in'),
             sources: {
-                maxOpenAgents: state.root.maxOpenAgentsSource === 'operator-live'
-                    ? 'operator-live'
-                    : (rootConfiguration?.sources.maxOpenAgents ?? 'built-in'),
-                maxDepth: state.root.maxDepthSource === 'operator-live'
-                    ? 'operator-live'
-                    : (rootConfiguration?.sources.maxDepth ?? 'built-in'),
+                maxOpenAgents: state.root.maxOpenAgentsSource === 'operator-live' ? 'operator-live' : 'saved-policy',
+                maxDepth: state.root.maxDepthSource === 'operator-live' ? 'operator-live' : 'saved-policy',
                 serviceGrant: rootConfiguration?.sources.serviceGrant ?? 'built-in',
             },
             agentExtensions: Object.entries(state.root.agentExtensions).map(([specifier, setting]) => ({
                 specifier,
                 state: setting,
+                available: setting === 'deny' ||
+                    !!rootConfiguration?.extensions.entries.find((entry) => entry.specifier === specifier)?.paths.length,
                 source: rootConfiguration?.extensions.entries.find((entry) => entry.specifier === specifier)?.source ?? 'built-in',
             })),
             serviceGrant: [...state.root.serviceGrant],

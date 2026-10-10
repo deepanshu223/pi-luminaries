@@ -424,7 +424,7 @@ export class LuminariesCommandCenterComponent {
         }
         if (this.view === 'agent') {
             this.setVisibleMotion(hasMotionFrame(selected));
-            return this.renderAgent(selected, safeWidth, rows);
+            return boundTerminalLines(this.renderAgent(selected, safeWidth, rows), safeWidth, this.terminalWidth);
         }
         const lines = rows < 10
             ? this.renderCompact(projection, safeWidth, rows)

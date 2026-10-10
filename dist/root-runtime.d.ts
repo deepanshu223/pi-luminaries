@@ -42,7 +42,7 @@ export declare class RootRuntime {
     };
     beforeAgentStartRequiresGate(): boolean;
     beforeAgentStart(_prompt: string): Promise<void>;
-    messageStart(message: unknown): void;
+    messageStart(message: unknown): Promise<void>;
     messageUpdate(event: unknown): void;
     messageEnd(message: unknown): void;
     agentSettled(outcome?: PiTurnSettlement['outcome']): PiTurnSettlement | undefined;

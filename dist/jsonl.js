@@ -14,19 +14,23 @@ export class JsonlReader {
     maxRecordBytes;
     maxBufferBytes;
     decoder = new StringDecoder('utf8');
-    buffer = '';
+    fragments = [];
+    recordBytes = 0;
+    prefix = '';
     ended = false;
     failed = false;
     skippingRecord = false;
     onRecord;
     onError;
     skipRecordPrefixes;
+    prefixLength;
     constructor(onRecord, options = {}, onError) {
         this.onRecord = onRecord;
         this.onError = onError;
         this.maxRecordBytes = options.maxRecordBytes ?? options.maxBufferBytes;
         this.maxBufferBytes = options.maxBufferBytes;
         this.skipRecordPrefixes = options.skipRecordPrefixes ?? [];
+        this.prefixLength = Math.max(0, ...this.skipRecordPrefixes.map((prefix) => prefix.length));
         if ((this.maxRecordBytes !== undefined && (!Number.isSafeInteger(this.maxRecordBytes) || this.maxRecordBytes < 1)) ||
             (this.maxBufferBytes !== undefined && (!Number.isSafeInteger(this.maxBufferBytes) || this.maxBufferBytes < 1)) ||
             (this.maxRecordBytes !== undefined &&
@@ -53,9 +57,8 @@ export class JsonlReader {
             this.append(this.decoder.end());
             if (this.skippingRecord)
                 throw new SyntaxError('JSONL stream ended with an unterminated record');
-            if (this.buffer.length > 0)
+            if (this.fragments.length > 0)
                 throw new SyntaxError('JSONL stream ended with an unterminated record');
-            this.buffer = '';
         }
         catch (error) {
             this.fail(error);
@@ -65,49 +68,38 @@ export class JsonlReader {
     stop() {
         this.failed = true;
         this.ended = true;
-        this.buffer = '';
+        this.fragments = [];
     }
     append(text) {
-        if (this.skippingRecord) {
-            const newline = text.indexOf('\n');
-            if (newline === -1)
-                return;
-            this.skippingRecord = false;
-            text = text.slice(newline + 1);
-            if (!text)
-                return;
-        }
-        this.buffer += text;
-        this.drain();
-        if (!this.skippingRecord &&
-            this.maxBufferBytes !== undefined &&
-            Buffer.byteLength(this.buffer, 'utf8') > this.maxBufferBytes) {
-            throw new RangeError(`JSONL parser buffer exceeds ${this.maxBufferBytes} bytes`);
-        }
-    }
-    drain() {
-        while (!this.failed) {
-            const skip = this.skipRecordPrefixes.some((prefix) => this.buffer.startsWith(prefix));
-            const newline = this.buffer.indexOf('\n');
-            if (skip) {
-                if (newline === -1) {
-                    this.buffer = '';
-                    this.skippingRecord = true;
-                    return;
+        let start = 0;
+        while (start < text.length && !this.failed) {
+            const newline = text.indexOf('\n', start);
+            const fragment = text.slice(start, newline < 0 ? text.length : newline);
+            if (!this.skippingRecord) {
+                if (this.prefix.length < this.prefixLength)
+                    this.prefix += fragment.slice(0, this.prefixLength - this.prefix.length);
+                this.skippingRecord = this.skipRecordPrefixes.some((prefix) => this.prefix.startsWith(prefix));
+                if (this.skippingRecord)
+                    this.fragments = [];
+                else {
+                    this.fragments.push(fragment);
+                    if (this.maxRecordBytes !== undefined || this.maxBufferBytes !== undefined)
+                        this.recordBytes += Buffer.byteLength(fragment, 'utf8');
+                    if (this.maxRecordBytes !== undefined && this.recordBytes + (newline < 0 ? 0 : 1) > this.maxRecordBytes)
+                        throw new RangeError(`JSONL record exceeds ${this.maxRecordBytes} bytes`);
+                    if (this.maxBufferBytes !== undefined && this.recordBytes > this.maxBufferBytes)
+                        throw new RangeError(`JSONL parser buffer exceeds ${this.maxBufferBytes} bytes`);
                 }
-                this.buffer = this.buffer.slice(newline + 1);
-                continue;
             }
-            if (newline === -1)
-                break;
-            const line = this.buffer.slice(0, newline);
-            this.buffer = this.buffer.slice(newline + 1);
-            this.parseRecord(line, true);
-        }
-        if (this.failed)
-            return;
-        if (this.maxRecordBytes !== undefined && Buffer.byteLength(this.buffer, 'utf8') > this.maxRecordBytes) {
-            throw new RangeError(`JSONL record exceeds ${this.maxRecordBytes} bytes`);
+            if (newline < 0)
+                return;
+            if (!this.skippingRecord)
+                this.parseRecord(this.fragments.join(''), true);
+            this.fragments = [];
+            this.recordBytes = 0;
+            this.prefix = '';
+            this.skippingRecord = false;
+            start = newline + 1;
         }
     }
     parseRecord(line, terminated) {
@@ -132,7 +124,7 @@ export class JsonlReader {
             return;
         this.failed = true;
         this.ended = true;
-        this.buffer = '';
+        this.fragments = [];
         const normalized = error instanceof Error ? error : new Error(String(error));
         if (this.onError) {
             this.onError(normalized);

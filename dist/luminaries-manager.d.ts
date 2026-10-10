@@ -13,6 +13,7 @@ import { type PiInvocation } from './pi-rpc.ts';
 import { type RootTransport } from './root-runtime.ts';
 import { type ManagedExtensionHost, type ManagedExtensionSource, type RootConfigurationSnapshot } from './root-configuration.ts';
 import { LUMINARIES_IDENTITY } from './product-identity.ts';
+import type { LuminariesEditableCard } from './command-center.ts';
 type ManagerState = 'new' | 'starting' | 'running' | 'closing' | 'closed';
 export interface LuminariesSessionBinding {
     sessionId: string;
@@ -209,6 +210,7 @@ export declare class LuminariesManager {
     attachmentInvocation(): string;
     operatorModels(): readonly ModelDescriptor[];
     operatorThinkingLevels(): readonly string[];
+    operatorExpertCard(agentId: string): Promise<LuminariesEditableCard>;
     operatorSelectableExtensions(): readonly {
         specifier: string;
         source: string;

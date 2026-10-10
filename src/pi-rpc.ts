@@ -53,7 +53,6 @@ export interface PiRpcOptions {
   invocation: PiInvocation;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
-  unsetEnv?: readonly string[];
   limits?: PiRpcLimits;
   requestTimeoutMs?: number;
 }
@@ -256,10 +255,6 @@ interface Pending {
   timer?: NodeJS.Timeout;
   command: string;
 }
-interface SettlementWait {
-  promise: Promise<Record<string, unknown>>;
-  cancel: (error: Error) => void;
-}
 
 /** One Pi RPC process. Command writes are serialized; responses/events are independent. */
 export class PiRpcProcess extends EventEmitter {
@@ -276,8 +271,6 @@ export class PiRpcProcess extends EventEmitter {
   private failureEmitted = false;
   private closePromise?: Promise<void>;
   private terminationPromise?: Promise<void>;
-  private settlementActive = false;
-  private cancelSettlement?: (error: Error) => void;
   private readonly stderrRing: string[] = [];
   private readonly diagnosticsRing: string[] = [];
   private readonly limits: JsonlLimits & Required<Omit<PiRpcLimits, keyof JsonlLimits>>;
@@ -316,7 +309,6 @@ export class PiRpcProcess extends EventEmitter {
       if (value === undefined) delete env[key];
       else env[key] = value;
     }
-    for (const key of this.options.unsetEnv ?? []) delete env[key];
     const child = spawn(invocation.command, [...(invocation.args ?? [])], {
       cwd: this.options.cwd,
       env,
@@ -421,84 +413,6 @@ export class PiRpcProcess extends EventEmitter {
     return verifyPrivateSessionState(recordOf(response.data) ?? response, expected);
   }
 
-  async requestAndWaitForSettled(
-    command: Record<string, unknown>,
-    timeoutMs: number | null = this.options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs,
-    onAdmitted?: (response: RpcResponse) => Promise<void>,
-    settlementTimeoutMs: number | null = timeoutMs,
-  ): Promise<{ response: RpcResponse; settled: Record<string, unknown> }> {
-    const wait = this.createSettlementWait(settlementTimeoutMs);
-    try {
-      const response = this.request(command, timeoutMs).then(async (value) => {
-        await onAdmitted?.(value);
-        return value;
-      });
-      const [accepted, settled] = await Promise.all([response, wait.promise]);
-      return { response: accepted, settled };
-    } catch (error) {
-      const normalized = childError(error);
-      wait.cancel(normalized);
-      if (!this.exitError && normalized.message === 'Pi agent_settled timeout') {
-        const indeterminate = new Error(
-          'Pi RPC command outcome is indeterminate because agent_settled was not observed',
-          { cause: normalized },
-        );
-        this.recordFailure(indeterminate);
-        throw indeterminate;
-      }
-      throw normalized;
-    }
-  }
-
-  waitForAgentSettled(
-    timeoutMs = this.options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs,
-  ): Promise<Record<string, unknown>> {
-    return this.createSettlementWait(timeoutMs).promise;
-  }
-
-  private createSettlementWait(timeoutMs: number | null): SettlementWait {
-    if (timeoutMs !== null && (!Number.isFinite(timeoutMs) || timeoutMs <= 0))
-      throw new RangeError('Pi agent settlement timeout must be null or positive');
-    if (this.exitError) throw this.exitError;
-    if (this.closed) throw new Error('Pi RPC process is closed');
-    if (this.settlementActive)
-      throw new Error('Pi agent settlement wait already active; overlapping activations are refused');
-    this.settlementActive = true;
-    let finish: (error?: Error, event?: Record<string, unknown>) => void = () => undefined;
-    let cancel: (error: Error) => void = () => undefined;
-    const promise = new Promise<Record<string, unknown>>((resolvePromise, rejectPromise) => {
-      let started = false;
-      let finished = false;
-      const timer =
-        timeoutMs === null ? undefined : setTimeout(() => finish(new Error('Pi agent_settled timeout')), timeoutMs);
-      const onEvent = (event: Record<string, unknown>) => {
-        if (event.type === 'agent_start') started = true;
-        else if (event.type === 'agent_settled' && started) finish(undefined, event);
-      };
-      const onFailure = (error: Error) => finish(error);
-      const cleanup = () => {
-        if (timer) clearTimeout(timer);
-        this.off('event', onEvent);
-        this.off('failure', onFailure);
-        this.settlementActive = false;
-        if (this.cancelSettlement === cancel) this.cancelSettlement = undefined;
-      };
-      finish = (error, event) => {
-        if (finished) return;
-        finished = true;
-        cleanup();
-        if (error) rejectPromise(error);
-        else if (event) resolvePromise(event);
-        else rejectPromise(new Error('Pi settlement completed without an event'));
-      };
-      cancel = (error) => finish(error);
-      this.cancelSettlement = cancel;
-      this.on('event', onEvent);
-      this.on('failure', onFailure);
-    });
-    return { promise, cancel };
-  }
-
   get stderr(): readonly string[] {
     return this.stderrRing;
   }
@@ -521,7 +435,6 @@ export class PiRpcProcess extends EventEmitter {
     this.intentionalClose = true;
     const closeError = new Error('Pi RPC process closed');
     this.reader?.stop();
-    this.cancelSettlement?.(closeError);
     this.rejectPending(closeError);
     const child = this.child;
     if (!child || this.exited || child.exitCode !== null || child.signalCode !== null) {
@@ -622,7 +535,6 @@ export class PiRpcProcess extends EventEmitter {
     this.closed = true;
     this.reader?.stop();
     if (this.child?.stdin && !this.child.stdin.destroyed) this.child.stdin.destroy();
-    this.cancelSettlement?.(this.exitError);
     this.rejectPending(this.exitError);
     if (!this.failureEmitted) {
       this.failureEmitted = true;

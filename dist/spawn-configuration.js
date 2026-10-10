@@ -117,7 +117,6 @@ export function resolveSpawnConfiguration(options) {
         ...(selectedModel?.provider ? { provider: selectedModel.provider } : {}),
         ...(selectedModel ? { model: selectedModel.id, modelKey: selectedModel.key } : {}),
         ...(descriptor ? { contextWindow: descriptor.contextWindow } : {}),
-        ...(descriptor?.maxOutputTokens ? { maxOutputTokens: descriptor.maxOutputTokens } : {}),
         ...(thinking ? { thinking } : {}),
         cwd,
         ...(extensions === undefined ? {} : { extensions }),

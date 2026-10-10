@@ -19,7 +19,6 @@ export interface ModelDescriptor {
   provider: string;
   id: string;
   contextWindow: number;
-  maxOutputTokens?: number;
   reasoning?: boolean;
   thinkingLevel?: ThinkingLevel;
 }
@@ -46,7 +45,6 @@ export interface EffectiveSpawnConfiguration {
   model?: string;
   modelKey?: string;
   contextWindow?: number;
-  maxOutputTokens?: number;
   thinking?: ThinkingLevel;
   cwd: string;
   extensions?: string[];
@@ -198,7 +196,6 @@ export function resolveSpawnConfiguration(options: {
     ...(selectedModel?.provider ? { provider: selectedModel.provider } : {}),
     ...(selectedModel ? { model: selectedModel.id, modelKey: selectedModel.key } : {}),
     ...(descriptor ? { contextWindow: descriptor.contextWindow } : {}),
-    ...(descriptor?.maxOutputTokens ? { maxOutputTokens: descriptor.maxOutputTokens } : {}),
     ...(thinking ? { thinking } : {}),
     cwd,
     ...(extensions === undefined ? {} : { extensions }),

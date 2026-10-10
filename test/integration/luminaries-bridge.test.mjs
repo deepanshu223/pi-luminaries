@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -124,7 +124,7 @@ test('authenticated child bridge calls use the manager tool gateway and revoked 
   }
 });
 
-test('manager shutdown stops admission and drains an already admitted bridge handler before Store close', async () => {
+test('manager shutdown drains an admitted bridge handler after its caller times out', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'luminaries-bridge-drain-'));
   const sessionFile = join(root, 'parent.jsonl');
   const manager = new LuminariesManager({
@@ -132,6 +132,12 @@ test('manager shutdown stops admission and drains an already admitted bridge han
     sessionFile,
     cwd: root,
     agentDir: join(root, 'agent-state'),
+  });
+  let release;
+  t.after(async () => {
+    release?.();
+    await manager.close();
+    await rm(root, { recursive: true, force: true });
   });
   await manager.start();
   const rootId = manager.store.snapshot().root.rootId;
@@ -160,7 +166,6 @@ test('manager shutdown stops admission and drains an already admitted bridge han
   manager.bridge.bind(credential, { runtimeIdentity: { agentId: 'bridge-child', runtimeOwner } });
 
   let enter;
-  let release;
   const entered = new Promise((resolvePromise) => {
     enter = resolvePromise;
   });
