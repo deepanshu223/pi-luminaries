@@ -29,7 +29,7 @@ Prettier owns formatting, TypeScript checks static correctness, tests exercise b
 
 ## Tests
 
-Run the automated tests with:
+Run the focused integration tests with:
 
 ```bash
 npm test
@@ -49,7 +49,7 @@ The real-Pi scenarios cover:
 
 `pack:check` repeats the retained-expert journey using the installed npm tarball. This checks that the shipped package can run an expert, beyond loading the extension.
 
-Run just the real-Pi scenarios with `npm run test:native`. To check another Pi version, set `LUMINARIES_TEST_PI` to its installed `dist/cli.js`. CI runs the full suite on Windows and Linux with the development version, plus the minimum supported Pi on Linux and the newer compatibility host on Windows. The host versions are pinned in `.github/workflows/check.yml`.
+Run the real-Pi scenarios separately with `npm run test:native`. To check another Pi version, set `LUMINARIES_TEST_PI` to its installed `dist/cli.js`. CI runs both groups in separate steps on Windows and Linux with the development version, plus the minimum supported Pi on Linux and the newer compatibility host on Windows. Each test step has a three-minute limit. The host versions are pinned in `.github/workflows/check.yml`.
 
 For a focused change, run the relevant file:
 

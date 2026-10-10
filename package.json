@@ -1,6 +1,6 @@
 {
   "name": "pi-luminaries",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Your constellation of enduring experts for Pi",
   "keywords": [
@@ -57,9 +57,9 @@
     "format": "prettier --write package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"docs/{usage,configuration,foundations}.md\" \"docs/reference/**/*.md\" \"skills/luminaries-collaboration/SKILL.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
     "format:check": "prettier --check package.json package-lock.json tsconfig.json tsconfig.build.json .prettierrc.json \"*.md\" \"docs/{usage,configuration,foundations}.md\" \"docs/reference/**/*.md\" \"skills/luminaries-collaboration/SKILL.md\" \"scripts/**/*.mjs\" \"src/**/*.ts\" \"test/**/*.{mjs,ts}\"",
     "pack:check": "node scripts/pack-check.mjs",
-    "test": "node --test --test-concurrency=1 --test-timeout=150000 test/**/*.test.mjs",
+    "test": "node --test --test-concurrency=1 --test-timeout=150000 test/integration/*.test.mjs test/unit/*.test.mjs",
     "test:native": "node --test --test-concurrency=1 --test-timeout=150000 test/native/*.test.mjs",
-    "check": "npm run typecheck && npm run format:check && npm test && npm run pack:check"
+    "check": "npm run typecheck && npm run format:check && npm test && npm run test:native && npm run pack:check"
   },
   "engines": {
     "node": ">=22.19.0"

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.3 — 2026-10-11
+
+- Keep messages and follow-ups deliverable when a busy expert finishes, is interrupted, or changes extensions. Recover queued input without delivering it twice.
+- Notify the sender when a steer misses its intended turn, and resolve failed requests instead of leaving the requester waiting.
+- Report Pi input-handler failures instead of leaving an expert stuck on Working, and clear acknowledged uncertainty warnings when work continues.
+- Resume constellations when an extension source is missing. Keep affected experts' messages available and resume delivery when their extension selection is corrected.
+- Allow `set_extensions` in `serviceGrant` without preventing Root from starting.
+- Recover stale owner locks more reliably on Windows and macOS while preserving the single-writer check.
+- Preserve complete expert-card values when editing from the dashboard or an attached terminal.
+- Handle nested recent-context launches using Pi's own message conversion, and improve large-image conversation handling and terminal-width rendering.
+- Replace redundant tests with focused integration checks and real-Pi journeys covering collaboration, controls, extensions, shared views, recovery, and session handoffs.
+- Add troubleshooting guidance, clarify extension configuration and saved-state locations, and improve package and skill discovery.
+- Raise the minimum supported Pi version to 0.84.4 for native queued-input recovery.
+
 ## 0.1.2 — 2026-10-05
 
 - Support Pi 1.0's fullscreen selection and scrolling while keeping regular terminal mode working.
