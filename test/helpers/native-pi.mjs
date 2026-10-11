@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -48,7 +48,7 @@ export function waitFor(read, subscribe, signal) {
 }
 
 export async function nativePi(t, { luminaries = true, respond, appendSystemPrompt } = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'luminaries-native-'));
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'luminaries-native-')));
   const profile = join(root, 'profile');
   const calls = [];
   const changes = new EventEmitter();
