@@ -96,7 +96,7 @@ function handle(value) {
     emit({ type: 'agent_start' });
     response(value.id, { disposition: 'handled' });
     emit({ type: 'message_start', message });
-    activeTimer = setTimeout(() => settle('completed'), delayMs);
+    if (process.env.FAKE_ACTOR_HOLD !== '1') activeTimer = setTimeout(() => settle('completed'), delayMs);
     return;
   }
   throw new Error(`Unsupported fault-fixture command: ${value.type}`);

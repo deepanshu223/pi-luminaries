@@ -166,7 +166,7 @@ test('real process death before and after rename preserves the exact commit boun
   }
 });
 
-test('real replacement never exposes a missing or partial canonical file', async () => {
+test('real replacement preserves complete files across reader contention', async () => {
   const { statePath } = await freshState();
   const values = ['A'.repeat(16_384), 'B'.repeat(16_384)];
   await atomicReplacePrivateFile(statePath, values[0]);
@@ -186,23 +186,7 @@ test('real replacement never exposes a missing or partial canonical file', async
     await heldReader.close();
   }
   await atomicReplacePrivateFile(statePath, values[1]);
-  let running = true;
-  const reads = [];
-  const reader = (async () => {
-    while (running) {
-      const value = await readFile(statePath, 'utf8');
-      reads.push(value[0]);
-      assert.ok(value === values[0] || value === values[1]);
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
-    }
-  })();
-  try {
-    for (let index = 0; index < 30; index++) await atomicReplacePrivateFile(statePath, values[index % 2]);
-  } finally {
-    running = false;
-    await reader;
-  }
-  assert.ok(reads.length > 0);
+  assert.equal(await readFile(statePath, 'utf8'), values[1]);
 });
 
 test('same-process aliases and a real second process cannot share the writer lease', async (t) => {

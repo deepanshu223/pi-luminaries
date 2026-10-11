@@ -10,7 +10,7 @@ const manager = new LuminariesManager({
   cwd: options.cwd,
   agentDir: options.agentDir,
   invocation: { command: process.execPath, args: [resolve('test/fixtures/fake-actor-rpc.mjs')] },
-  env: { FAKE_ACTOR_DELAY_MS: '1000' },
+  env: { FAKE_ACTOR_HOLD: '1' },
   sessionHost: createPiSessionHost(),
 });
 await manager.start();
