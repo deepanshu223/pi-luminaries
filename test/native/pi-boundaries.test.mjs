@@ -63,6 +63,7 @@ test('real Pi delivers busy input and follow-up once, then interrupts cleanly', 
     'A follow-up must wait for the turn to finish while steering reaches its next model boundary',
   );
   atNextBoundary.respond();
+  await pi.wait(() => pi.calls.some((call) => textOf(call.messages.at(-1)).includes('later-input')));
   await pi.settled(id);
   const childCalls = pi.calls.filter((call) => call.sessionId === held.sessionId);
   for (const marker of ['busy-input', 'later-input']) {

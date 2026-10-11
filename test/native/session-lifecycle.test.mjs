@@ -8,20 +8,31 @@ test(
   'attached clients share a retained expert across restart, archive, standalone handoff and adoption',
   { timeout: 60000 },
   async (t) => {
-    const pi = await nativePi(t);
+    let firstTurn;
+    const pi = await nativePi(t, {
+      respond(call) {
+        const last = call.messages.at(-1);
+        const text = textOf(last);
+        if (last?.role === 'user' && !text.startsWith('TEST_CALL ') && text.includes('Remember the blue notebook.')) {
+          firstTurn = call;
+          return false;
+        }
+      },
+    });
     const spawned = await pi.tool('luminaries_spawn', {
       name: 'Vega',
       assignment: 'Remember the blue notebook.',
       ownershipBoundary: 'Test only',
     });
     const id = spawned.agent.agentId;
-    await pi.settled(id);
+    await pi.wait(() => firstTurn);
     const [descriptor] = await discoverAttachmentDescriptors(pi.profile, pi.root);
     const observer = await LuminariesAttachmentClient.connect(descriptor.descriptorPath);
     t.after(() => observer.close());
     const stopWatching = observer.onAgentConversationChange(id, () => {});
     t.after(stopWatching);
     await observer.operatorInput(id, 'A second terminal can contribute.', 'auto');
+    firstTurn.respond();
     await pi.wait(() => pi.calls.some((call) => textOf(call.messages.at(-1)).includes('second terminal')));
     await pi.settled(id);
     await waitFor(

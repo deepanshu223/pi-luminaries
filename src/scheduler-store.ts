@@ -1500,11 +1500,18 @@ export class SchedulerStore {
     activationIdInput: string,
     leaseTokenInput: string,
     outcome: Exclude<ActivationState, 'running'>,
+    deferWhileSending = false,
   ): Promise<SchedulerCommit<ActivationRecord | undefined>> {
     const activationId = id(activationIdInput, 'activationId');
     const leaseToken = id(leaseTokenInput, 'leaseToken');
     return this.mutate((draft, affectedRecipientIds) => {
       if (draft.activations[activationId]?.state !== 'running')
+        return { changed: false, value: draft.activations[activationId] };
+      // Delivery can begin after the drain's last snapshot; check in the settlement transaction.
+      if (
+        deferWhileSending &&
+        peerMailboxRecords(draft).some((record) => record.activationId === activationId && record.status === 'sending')
+      )
         return { changed: false, value: draft.activations[activationId] };
       return settleActivationState(draft, activationId, leaseToken, outcome, affectedRecipientIds);
     });

@@ -126,7 +126,7 @@ export declare class SchedulerStore {
     startActivation(agentIdInput: string, inputKindInput: string): Promise<SchedulerCommit<ActivationRecord>>;
     markRootNativeInput(): Promise<SchedulerCommit<ActivationRecord | undefined>>;
     finishActivation(activationIdInput: string, leaseTokenInput: string, outcome: Exclude<ActivationState, 'running'>): Promise<SchedulerCommit<ActivationRecord>>;
-    finishActivationIfRunning(activationIdInput: string, leaseTokenInput: string, outcome: Exclude<ActivationState, 'running'>): Promise<SchedulerCommit<ActivationRecord | undefined>>;
+    finishActivationIfRunning(activationIdInput: string, leaseTokenInput: string, outcome: Exclude<ActivationState, 'running'>, deferWhileSending?: boolean): Promise<SchedulerCommit<ActivationRecord | undefined>>;
     applyMailboxIntent(intent: Extract<SchedulerMailboxIntent, {
         kind: 'admit_direct';
     }>, signal?: AbortSignal): Promise<SchedulerCommit<DirectControlAdmission>>;

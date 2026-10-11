@@ -156,22 +156,15 @@ export class RecipientDrain {
   }
 
   async settle(settlement: PiTurnSettlement): Promise<void> {
-    const snapshot = this.options.store.snapshot();
-    const activation = snapshot.activations[settlement.activationId];
-    if (!activation || activation.state !== 'running') return;
-    const attemptStillOpen = peerMailboxRecords(snapshot).some(
-      (record) => record.activationId === settlement.activationId && record.status === 'sending',
-    );
-    if (attemptStillOpen) {
-      this.pendingSettlements.set(settlement.activationId, settlement);
-      return;
-    }
-    this.pendingSettlements.delete(settlement.activationId);
+    this.pendingSettlements.set(settlement.activationId, settlement);
     const finished = await this.options.store.finishActivationIfRunning(
       settlement.activationId,
       settlement.leaseToken,
       settlement.outcome,
+      true,
     );
+    if (finished.value?.state === 'running') return;
+    this.pendingSettlements.delete(settlement.activationId);
     if ((settlement.outcome === 'settled' || settlement.outcome === 'aborted') && finished.value)
       this.options.onRecipientIdle?.(finished.value.agentId);
   }
@@ -324,6 +317,8 @@ export class RecipientDrain {
       attemptId: plan.attemptId,
       ...(settlement ? { settlement } : {}),
     });
+    const pending = this.pendingSettlements.get(plan.activationId);
+    if (pending) await this.settle(pending);
     if (error) this.addDiagnostic(error);
   }
 
